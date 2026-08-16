@@ -7,7 +7,7 @@ int main(void) {
     }
     
     while(foxui_wait_events(&window)) {
-        
+        foxui_draw();
     }
     
     foxui_destroy_window(&window);

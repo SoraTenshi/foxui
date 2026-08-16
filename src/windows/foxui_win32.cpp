@@ -12,8 +12,7 @@
 #include <windowsx.h>
 #include <dwmapi.h>
 
-// todo(sora): probably should happen in the buildscript...
-#pragma comment(lib, "dwmapi.lib")
+#include "foxui_d3d11.cpp"
 
 // todo(sora): perhaps, this should also be configurable?
 #define FOXUI_WINDOW_CLASS_NAME L"Foxui_Window_Class_Name"
@@ -57,6 +56,8 @@ enum {
 #ifndef DWMWA_BORDER_COLOR
 #define DWMWA_BORDER_COLOR 34
 #endif
+
+FOXUI_GLOBAL Foxui_D3D11 foxui_d3d11;
 
 FOXUI_INTERNAL s32 foxui_scale_for_dpi(s32 value, u32 dpi) {
     return MulDiv(value, (s32)dpi, 96);
@@ -595,7 +596,11 @@ FOXUI_INTERNAL LRESULT CALLBACK foxui_wnd_proc(
             return 0;
         }
         case WM_SIZE: {
-            InvalidateRect(hwnd, nullptr, FALSE);
+            s32 width = LOWORD(long_parameter);
+            s32 height = HIWORD(long_parameter);
+            if(width && height) {
+                foxui_d3d11_resize(&foxui_d3d11, width, height);
+            }
             return 0;
         }
         case WM_ACTIVATE: {
@@ -616,7 +621,7 @@ FOXUI_INTERNAL LRESULT CALLBACK foxui_wnd_proc(
         }
         case WM_CLOSE:
         case WM_DESTROY: {
-            window->flags.should_close = 1;
+            window->flags.should_close = true;
             return 0;
         }
         case WM_TIMER: {
@@ -634,10 +639,11 @@ FOXUI_INTERNAL LRESULT CALLBACK foxui_wnd_proc(
     return DefWindowProcW(hwnd, message, word_parameter, long_parameter);
 }
 
-bool foxui_create_window(
-    Foxui_Window            *window,
-    Foxui_Window_Description description
-) {
+void foxui_draw(void) {
+    foxui_d3d11_draw(&foxui_d3d11);
+}
+
+bool foxui_create_window(Foxui_Window *window, Foxui_Window_Description description) {
     if(!window
         || (!description.title.items && description.title.count)
         || description.width <= 0
@@ -670,9 +676,11 @@ bool foxui_create_window(
     u32 dpi = foxui_window_dpi(nullptr);
     s32 width = foxui_scale_for_dpi(description.width, dpi);
     s32 height = foxui_scale_for_dpi(description.height, dpi);
+    // note(sora): apparently, WS_OVERLAPPEDWINDOW is the only style that allows
+    //             for the behaviour i actually want.
     DWORD style = WS_OVERLAPPEDWINDOW;
     
-    HWND wnd = CreateWindowExW(
+    HWND hwnd = CreateWindowExW(
         0,
         FOXUI_WINDOW_CLASS_NAME,
         title,
@@ -687,35 +695,42 @@ bool foxui_create_window(
         window
     );
 
-    if(!wnd) {
+    if(!hwnd) {
         *window = {0};
         return false;
     }
 
-    window->native_window = (void *)wnd;
-    window->dpi = (u32)GetDpiForWindow(wnd);
+    window->native_window = (void *)hwnd;
+    window->dpi = (u32)GetDpiForWindow(hwnd);
 
     DWORD corner_preference = window->flags.round_corners ? DWMWCP_ROUND : DWMWCP_DONOTROUND;
     DwmSetWindowAttribute(
-        wnd,
+        hwnd,
         DWMWA_WINDOW_CORNER_PREFERENCE,
         &corner_preference,
         sizeof(corner_preference)
     );
     DwmSetWindowAttribute(
-        wnd,
+        hwnd,
         DWMWA_BORDER_COLOR,
         &FOXUI_COLOR_BORDER,
         sizeof(FOXUI_COLOR_BORDER)
     );
 
-    ShowWindow(wnd, SW_SHOWNORMAL);
-    UpdateWindow(wnd);
+    if(!foxui_d3d11_create(&foxui_d3d11, window)) {
+        DestroyWindow(hwnd);
+        return false;
+    }
+
+    ShowWindow(hwnd, SW_SHOWNORMAL);
+    UpdateWindow(hwnd);
     return true;
 }
 
 void foxui_destroy_window(Foxui_Window *window) {
     if (!window) return;
+
+    foxui_d3d11_destroy(&foxui_d3d11);
     if (window->native_window) DestroyWindow((HWND)window->native_window);
 
     *window = {0};

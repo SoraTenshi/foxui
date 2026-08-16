@@ -14,8 +14,10 @@ typedef int16_t s16;
 typedef int32_t s32;
 typedef int64_t s64;
 
+typedef float   f32;
+typedef double  f64;
+
 typedef uintptr_t usize;
-typedef ptrdiff_t ssize;
 
 typedef struct String8 {
     u8   *items;
@@ -34,5 +36,6 @@ typedef struct String8 {
 #define FOXUI_ARRAY_COUNT(arr) (sizeof((arr)) / sizeof((arr)[0]))
 
 #define FOXUI_INTERNAL static
+#define FOXUI_GLOBAL   static
 
 #endif /* FOXUI_PLATFORM_H */
