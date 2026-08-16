@@ -7,7 +7,9 @@ int main(void) {
     }
     
     while(foxui_wait_events(&window)) {
-        foxui_draw();
+        foxui_begin_frame();
+        foxui_draw_titlebar(&window);
+        foxui_end_frame();
     }
     
     foxui_destroy_window(&window);

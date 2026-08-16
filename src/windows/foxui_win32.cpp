@@ -272,11 +272,8 @@ FOXUI_INTERNAL LRESULT foxui_window_hit_test(Foxui_Window *window, LPARAM mouse_
     return HTCLIENT;
 }
 
-FOXUI_INTERNAL void foxui_draw_titlebar(Foxui_Window *window) {
+FOXUI_INTERNAL void foxui_d3d11_draw_titlebar(Foxui_Window *window) {
     HWND hwnd = (HWND)window->native_window;
-    PAINTSTRUCT paint = {};
-    HDC device_context = BeginPaint(hwnd, &paint);
-    if (!device_context) return;
 
     RECT client_rect = {};
     GetClientRect(hwnd, &client_rect);
@@ -337,10 +334,6 @@ FOXUI_INTERNAL void foxui_draw_titlebar(Foxui_Window *window) {
     else
         KillTimer(hwnd, FOXUI_HOVER_TIMER_ID);
 
-    HBRUSH background_brush = CreateSolidBrush(FOXUI_COLOR_BG);
-    HBRUSH titlebar_brush   = CreateSolidBrush(FOXUI_COLOR_TITLEBAR);
-    FillRect(device_context, &client_rect, background_brush);
-
     RECT titlebar_rect = client_rect;
     titlebar_rect.bottom = titlebar_height;
     window->titlebar_rect = Foxui_Titlebar_Rect {
@@ -349,7 +342,16 @@ FOXUI_INTERNAL void foxui_draw_titlebar(Foxui_Window *window) {
         .right = titlebar_rect.right,
         .bottom = titlebar_rect.bottom,
     };
-    FillRect(device_context, &titlebar_rect, titlebar_brush);
+    
+    // note(sora): "full titlebar"
+    foxui_d3d11_push_rect(
+        &foxui_d3d11,
+        0.f,
+        0.f,
+        (f32)client_rect.right,
+        (f32)titlebar_height,
+        FOXUI_COLOR_TITLEBAR
+    );
 
     for (Foxui_Title_Button button : FOXUI_TITLE_BUTTONS) {
         u32 hover_intensity = button_hover_intensities[button];
@@ -366,12 +368,8 @@ FOXUI_INTERNAL void foxui_draw_titlebar(Foxui_Window *window) {
             default: break;
         }
         
-        RECT button_rect = {
-            client_rect.right - button_width * index_from_right,
-            0,
-            client_rect.right - button_width * (index_from_right - 1),
-            titlebar_height,
-        };
+        f32 left = (f32)(client_rect.right - button_width * index_from_right);
+        f32 right = (f32)(client_rect.right - button_width * (index_from_right - 1));
 
         COLORREF hover_color = button == FOXUI_TITLE_BUTTON_CLOSE
             ? FOXUI_COLOR_CLOSE_BUTTON_HOVER
@@ -382,55 +380,97 @@ FOXUI_INTERNAL void foxui_draw_titlebar(Foxui_Window *window) {
         COLORREF fill = pressed == button
             ? pressed_color
             : foxui_blend_color(FOXUI_COLOR_TITLEBAR, hover_color, hover_intensity);
-        HBRUSH button_brush = CreateSolidBrush(fill);
-        FillRect(device_context, &button_rect, button_brush);
-        DeleteObject(button_brush);
+        
+        foxui_d3d11_push_rect(
+            &foxui_d3d11,
+            left,
+            0.f,
+            right,
+            (f32)titlebar_height,
+            fill
+        );
     }
 
-    HPEN icon_pen = CreatePen(PS_SOLID, foxui_scale_for_dpi(1, dpi), FOXUI_COLOR_TEXT);
-    HGDIOBJ previous_pen = SelectObject(device_context, icon_pen);
-    HGDIOBJ previous_brush = SelectObject(device_context, GetStockObject(NULL_BRUSH));
+    f32 icon_thickness = (f32)foxui_scale_for_dpi(1, dpi);
+    f32 icon_half_size = (f32)foxui_scale_for_dpi(5, dpi);
+    f32 icon_center_y = (f32)titlebar_height * 0.5f;
+    
+    f32 minimize_center_x = (f32)client_rect.right - (f32)button_width * 2.5f;
+    f32 minimize_center_y = icon_center_y + (pressed == FOXUI_TITLE_BUTTON_MINIMIZE
+      ? 1.f
+      : 0.f);
 
-    s32 icon_half_size = foxui_scale_for_dpi(5, dpi);
-    s32 icon_center_y  = titlebar_height / 2;
+    // note(sora): "minimize"
+    foxui_d3d11_push_rect(
+        &foxui_d3d11,
+        minimize_center_x - icon_half_size,
+        minimize_center_y,
+        minimize_center_x + icon_half_size,
+        minimize_center_y + icon_thickness,
+        FOXUI_COLOR_TEXT
+    );
 
-    s32 minimize_center_x = client_rect.right - button_width * 5 / 2;
-    s32 minimize_center_y = icon_center_y + (pressed == FOXUI_TITLE_BUTTON_MINIMIZE ? 1 : 0);
-    MoveToEx(device_context, minimize_center_x - icon_half_size, minimize_center_y, nullptr);
-    LineTo(device_context, minimize_center_x + icon_half_size, minimize_center_y);
+    f32 maximize_center_x = (f32)(client_rect.right - button_width * 3 / 2);
+    f32 maximize_center_y = (f32)(icon_center_y +
+        (pressed == FOXUI_TITLE_BUTTON_MAXIMIZE ? 1 : 0));
 
-    s32 maximize_center_x = client_rect.right - button_width * 3 / 2;
-    s32 maximize_center_y = icon_center_y + (pressed == FOXUI_TITLE_BUTTON_MAXIMIZE ? 1 : 0);
+    f32 left   = (f32)(maximize_center_x - icon_half_size);
+    f32 top    = (f32)(maximize_center_y - icon_half_size);
+    f32 right  = (f32)(maximize_center_x + icon_half_size);
+    f32 bottom = (f32)(maximize_center_y + icon_half_size);
+
+    f32 thickness = (f32)foxui_scale_for_dpi(1, dpi);
+
     if (IsZoomed(hwnd)) {
-        s32 restore_icon_offset = foxui_scale_for_dpi(2, dpi);
-        s32 back_left   = maximize_center_x - icon_half_size + restore_icon_offset;
-        s32 back_top    = maximize_center_y - icon_half_size;
-        s32 back_right  = maximize_center_x + icon_half_size;
-        s32 back_bottom = maximize_center_y + icon_half_size - restore_icon_offset;
-        s32 front_left   = maximize_center_x - icon_half_size;
-        s32 front_top    = maximize_center_y - icon_half_size + restore_icon_offset;
-        s32 front_right  = maximize_center_x + icon_half_size - restore_icon_offset;
-        s32 front_bottom = maximize_center_y + icon_half_size;
+        f32 offset = (f32)foxui_scale_for_dpi(2, dpi);
 
-        MoveToEx(device_context, back_left, front_top, nullptr);
-        LineTo(device_context, back_left, back_top);
-        LineTo(device_context, back_right, back_top);
-        LineTo(device_context, back_right, back_bottom);
-        LineTo(device_context, front_right, back_bottom);
-        Rectangle(
-            device_context,
+        f32 back_left   = left + offset;
+        f32 back_top    = top;
+        f32 back_right  = right;
+        f32 back_bottom = bottom - offset;
+
+        f32 front_left   = left;
+        f32 front_top    = top + offset;
+        f32 front_right  = right - offset;
+        f32 front_bottom = bottom;
+
+        // note(sora): "maximize" in zoom
+        foxui_d3d11_push_rect_outline(
+            &foxui_d3d11,
+            back_left,
+            back_top,
+            back_right,
+            back_bottom,
+            thickness,
+            FOXUI_COLOR_TEXT
+        );
+        foxui_d3d11_push_rect(
+            &foxui_d3d11,
             front_left,
             front_top,
-            front_right + 1,
-            front_bottom + 1
+            front_right,
+            front_bottom,
+            FOXUI_COLOR_TITLEBAR
+        );
+        foxui_d3d11_push_rect_outline(
+            &foxui_d3d11,
+            front_left,
+            front_top,
+            front_right,
+            front_bottom,
+            thickness,
+            FOXUI_COLOR_TEXT
         );
     } else {
-        Rectangle(
-            device_context,
-            maximize_center_x - icon_half_size,
-            maximize_center_y - icon_half_size,
-            maximize_center_x + icon_half_size + 1,
-            maximize_center_y + icon_half_size + 1
+        // note(sora): "maximize" not zoomed
+        foxui_d3d11_push_rect_outline(
+            &foxui_d3d11,
+            left,
+            top,
+            right,
+            bottom,
+            thickness,
+            FOXUI_COLOR_TEXT
         );
     }
 
@@ -441,33 +481,31 @@ FOXUI_INTERNAL void foxui_draw_titlebar(Foxui_Window *window) {
             ? 255
             : button_hover_intensities[FOXUI_TITLE_BUTTON_CLOSE]
     );
-    HPEN close_icon_pen = CreatePen(PS_SOLID, foxui_scale_for_dpi(1, dpi), close_icon_color);
-    SelectObject(device_context, close_icon_pen);
-
-    s32 close_center_x = client_rect.right - button_width / 2;
-    s32 close_center_y = icon_center_y + (pressed == FOXUI_TITLE_BUTTON_CLOSE ? 1 : 0);
-    MoveToEx(
-        device_context,
+    
+    f32 close_center_x = (f32)client_rect.right - (f32)button_width * 0.5f;
+    f32 close_center_y = icon_center_y + (pressed == FOXUI_TITLE_BUTTON_CLOSE
+      ? 1.f
+      : 0.f);
+      
+    // note(sora): "close"
+    foxui_d3d11_push_line(
+        &foxui_d3d11,
         close_center_x - icon_half_size,
         close_center_y - icon_half_size,
-        nullptr
+        close_center_x + icon_half_size,
+        close_center_y + icon_half_size,
+        icon_thickness,
+        close_icon_color
     );
-    LineTo(device_context, close_center_x + icon_half_size, close_center_y + icon_half_size);
-    MoveToEx(
-        device_context,
+    foxui_d3d11_push_line(
+        &foxui_d3d11,
         close_center_x + icon_half_size,
         close_center_y - icon_half_size,
-        nullptr
+        close_center_x - icon_half_size,
+        close_center_y + icon_half_size,
+        icon_thickness,
+        close_icon_color
     );
-    LineTo(device_context, close_center_x - icon_half_size, close_center_y + icon_half_size);
-
-    SelectObject(device_context, previous_brush);
-    SelectObject(device_context, previous_pen);
-    DeleteObject(close_icon_pen);
-    DeleteObject(icon_pen);
-    DeleteObject(titlebar_brush);
-    DeleteObject(background_brush);
-    EndPaint(hwnd, &paint);
 }
 
 FOXUI_INTERNAL LRESULT CALLBACK foxui_wnd_proc(
@@ -612,11 +650,9 @@ FOXUI_INTERNAL LRESULT CALLBACK foxui_wnd_proc(
             return TRUE;
         }
         case WM_PAINT: {
-            if (custom_decorations) {
-                foxui_draw_titlebar(window);
-                return 0;
-            }
-            ValidateRect(hwnd, nullptr);
+            PAINTSTRUCT paint = {};
+            BeginPaint(hwnd, &paint);
+            EndPaint(hwnd, &paint);
             return 0;
         }
         case WM_CLOSE:
@@ -639,8 +675,16 @@ FOXUI_INTERNAL LRESULT CALLBACK foxui_wnd_proc(
     return DefWindowProcW(hwnd, message, word_parameter, long_parameter);
 }
 
-void foxui_draw(void) {
-    foxui_d3d11_draw(&foxui_d3d11);
+void foxui_begin_frame(void) {
+    foxui_d3d11_begin_frame(&foxui_d3d11);
+}
+
+void foxui_end_frame(void) {
+    foxui_d3d11_end_frame(&foxui_d3d11);
+}
+
+void foxui_draw_titlebar(Foxui_Window *window) {
+    foxui_d3d11_draw_titlebar(window);
 }
 
 bool foxui_create_window(Foxui_Window *window, Foxui_Window_Description description) {

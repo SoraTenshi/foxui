@@ -35,7 +35,11 @@ bool foxui_create_window(
 );
 void foxui_destroy_window(Foxui_Window *window);
 
-void foxui_draw(void);
+void foxui_begin_frame(void);
+void foxui_end_frame(void);
+void foxui_present(void);
+
+void foxui_draw_titlebar(Foxui_Window *window);
 
 bool foxui_poll_events(Foxui_Window *window);
 bool foxui_wait_events(Foxui_Window *window);
