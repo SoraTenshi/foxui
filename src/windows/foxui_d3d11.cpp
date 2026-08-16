@@ -466,6 +466,23 @@ FOXUI_INTERNAL void foxui_d3d11_push_line(
     );
 }
 
+FOXUI_INTERNAL void foxui_d3d11_push_triangle(
+    Foxui_D3D11 *d3d,
+    f32 x0, f32 y0, COLORREF color0,
+    f32 x1, f32 y1, COLORREF color1,
+    f32 x2, f32 y2, COLORREF color2
+) {
+    if(d3d->vertex_count + 3 > FOXUI_D3D11_VERTEX_CAP) return;
+    
+    Foxui_D3D11_Vertex *vertex = d3d->vertices + d3d->vertex_count;
+    
+    vertex[0] = foxui_d3d11_vertex(d3d, x0, y0, color0);
+    vertex[1] = foxui_d3d11_vertex(d3d, x1, y1, color1);
+    vertex[2] = foxui_d3d11_vertex(d3d, x2, y2, color2);
+    
+    d3d->vertex_count += 3;
+}
+
 FOXUI_INTERNAL void foxui_d3d11_push_rect_outline(
     Foxui_D3D11 *d3d,
     f32          left,
@@ -538,7 +555,7 @@ FOXUI_INTERNAL void foxui_d3d11_begin_frame(Foxui_D3D11 *d3d) {
     );
 }
 
-FOXUI_INTERNAL void foxui_d3d11_end_frame(Foxui_D3D11 *d3d) {
+FOXUI_INTERNAL void foxui_d3d11_end_frame(Foxui_D3D11 *d3d, Foxui_Window *window) {
     if(d3d->vertex_count) {
         D3D11_MAPPED_SUBRESOURCE mapped = {};
 
@@ -582,5 +599,6 @@ FOXUI_INTERNAL void foxui_d3d11_end_frame(Foxui_D3D11 *d3d) {
         }
     }
 
-    d3d->swap_chain->Present(1, 0);
+    UINT sync_interval = window->flags.is_sizing ? 0 : 1;
+    d3d->swap_chain->Present(sync_interval, 0);
 }

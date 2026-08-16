@@ -37,9 +37,12 @@ enum {
 };
 
 enum {
-    FOXUI_HOVER_TIMER_ID = 1,
-    FOXUI_HOVER_TIMER_MS = 15,
-    FOXUI_HOVER_FADE_MS  = 160,
+    FOXUI_HOVER_TIMER_ID  = 1,
+    FOXUI_RENDER_TIMER_ID = 2,
+    
+    FOXUI_HOVER_TIMER_MS  = 15,
+    FOXUI_RENDER_TIMER_MS = 1,
+    FOXUI_HOVER_FADE_MS   = 160,
 };
 
 // todo(sora): probably, we should also be able to configure this to be turned off
@@ -157,7 +160,7 @@ FOXUI_INTERNAL void foxui_invalidate_title_button(
     RECT client_rect = {};
     GetClientRect(native_window, &client_rect);
 
-    u32 dpi = foxui_window_dpi(native_window);
+    u32 dpi          = foxui_window_dpi(native_window);
     s32 button_width = foxui_scale_for_dpi(46, dpi);
     s32 index_from_right = 3;
     switch(button) {
@@ -176,6 +179,7 @@ FOXUI_INTERNAL void foxui_invalidate_title_button(
         client_rect.right - button_width * (index_from_right - 1),
         foxui_scale_for_dpi(32, dpi),
     };
+
     InvalidateRect(native_window, &button_rect, FALSE);
 }
 
@@ -410,9 +414,9 @@ FOXUI_INTERNAL void foxui_d3d11_draw_titlebar(Foxui_Window *window) {
         FOXUI_COLOR_TEXT
     );
 
-    f32 maximize_center_x = (f32)(client_rect.right - button_width * 3 / 2);
+    f32 maximize_center_x = (f32)(client_rect.right - button_width * 3.f / 2.f);
     f32 maximize_center_y = (f32)(icon_center_y +
-        (pressed == FOXUI_TITLE_BUTTON_MAXIMIZE ? 1 : 0));
+        (pressed == FOXUI_TITLE_BUTTON_MAXIMIZE ? 1.f : 0.f));
 
     f32 left   = (f32)(maximize_center_x - icon_half_size);
     f32 top    = (f32)(maximize_center_y - icon_half_size);
@@ -564,7 +568,7 @@ FOXUI_INTERNAL LRESULT CALLBACK foxui_wnd_proc(
                 foxui_scale_for_dpi(80, dpi),
             };
             return 0;
-        }
+        } break;
         case WM_DPICHANGED: {
             window->dpi = HIWORD(word_parameter);
             RECT *suggested_rect = (RECT *)long_parameter;
@@ -578,7 +582,7 @@ FOXUI_INTERNAL LRESULT CALLBACK foxui_wnd_proc(
                 SWP_NOACTIVATE | SWP_NOZORDER
             );
             return 0;
-        }
+        } break;
         case WM_MOUSEMOVE: {
             TRACKMOUSEEVENT tracking = {sizeof(tracking)};
             tracking.dwFlags = TME_LEAVE;
@@ -594,7 +598,7 @@ FOXUI_INTERNAL LRESULT CALLBACK foxui_wnd_proc(
         case WM_MOUSELEAVE: {
             foxui_invalidate_title_button_transition(hwnd, FOXUI_TITLE_BUTTON_NONE);
             return 0;
-        }
+        } break;
         case WM_LBUTTONDOWN: {
             Foxui_Title_Button pressed_button = foxui_title_button_at(
                 hwnd,
@@ -603,7 +607,8 @@ FOXUI_INTERNAL LRESULT CALLBACK foxui_wnd_proc(
             );
             if (pressed_button) SetCapture(hwnd);
             foxui_invalidate_title_button(hwnd, pressed_button);
-        } return 0;
+            return 0;
+        } break;
         case WM_LBUTTONUP: {
             if (GetCapture() == hwnd) {
                 ReleaseCapture();
@@ -632,7 +637,7 @@ FOXUI_INTERNAL LRESULT CALLBACK foxui_wnd_proc(
             );
             foxui_invalidate_title_button(hwnd, hovered_button);
             return 0;
-        }
+        } break;
         case WM_SIZE: {
             s32 width = LOWORD(long_parameter);
             s32 height = HIWORD(long_parameter);
@@ -640,54 +645,75 @@ FOXUI_INTERNAL LRESULT CALLBACK foxui_wnd_proc(
                 foxui_d3d11_resize(&foxui_d3d11, width, height);
             }
             return 0;
-        }
+        } break;
         case WM_ACTIVATE: {
             for (Foxui_Title_Button button : FOXUI_TITLE_BUTTONS)
                 foxui_invalidate_title_button(hwnd, button);
             return 0;
-        }
+        } break;
         case WM_ERASEBKGND: {
             return TRUE;
-        }
+        } break;
         case WM_PAINT: {
             PAINTSTRUCT paint = {};
             BeginPaint(hwnd, &paint);
             EndPaint(hwnd, &paint);
             return 0;
-        }
+        } break;
         case WM_CLOSE:
         case WM_DESTROY: {
             window->flags.should_close = true;
             return 0;
-        }
-        case WM_TIMER: {
-            if (word_parameter != FOXUI_HOVER_TIMER_ID) break;
-            foxui_invalidate_animated_title_buttons(hwnd);
+        } break;
+        case WM_ENTERSIZEMOVE: {
+            window->flags.is_sizing = true;
+            SetTimer(hwnd, FOXUI_RENDER_TIMER_ID, FOXUI_RENDER_TIMER_MS, nullptr);
             return 0;
-        }
+        } break;
+        case WM_EXITSIZEMOVE: {
+            window->flags.is_sizing = false;
+            KillTimer(hwnd, FOXUI_RENDER_TIMER_ID);
+            window->render_frame(window, nullptr);
+            return 0;
+        } break;
+        case WM_TIMER: {
+            if(word_parameter == FOXUI_RENDER_TIMER_ID) {
+                window->render_frame(window, nullptr);
+                return 0;
+            }
+            
+            if(word_parameter == FOXUI_HOVER_TIMER_ID) {
+                foxui_invalidate_animated_title_buttons(hwnd);
+                return 0;
+            }
+        } break;
         case WM_NCDESTROY: {
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
             window->native_window = nullptr;
             return DefWindowProcW(hwnd, message, word_parameter, long_parameter);
-        }
+        } break;
     }
 
     return DefWindowProcW(hwnd, message, word_parameter, long_parameter);
 }
 
-void foxui_begin_frame(void) {
+void foxui_begin_frame(Foxui_Window *) {
     foxui_d3d11_begin_frame(&foxui_d3d11);
 }
 
-void foxui_end_frame(void) {
-    foxui_d3d11_end_frame(&foxui_d3d11);
+void foxui_end_frame(Foxui_Window *window) {
+    foxui_d3d11_end_frame(&foxui_d3d11, window);
 }
 
 void foxui_draw_titlebar(Foxui_Window *window) {
     foxui_d3d11_draw_titlebar(window);
 }
 
-bool foxui_create_window(Foxui_Window *window, Foxui_Window_Description description) {
+bool foxui_create_window(
+    Foxui_Window *window,
+    Foxui_Window_Description description,
+    Foxui_Render_Frame_Fn render_frame
+) {
     if(!window
         || (!description.title.items && description.title.count)
         || description.width <= 0
@@ -746,6 +772,7 @@ bool foxui_create_window(Foxui_Window *window, Foxui_Window_Description descript
 
     window->native_window = (void *)hwnd;
     window->dpi = (u32)GetDpiForWindow(hwnd);
+    window->render_frame = render_frame;
 
     DWORD corner_preference = window->flags.round_corners ? DWMWCP_ROUND : DWMWCP_DONOTROUND;
     DwmSetWindowAttribute(
@@ -800,3 +827,95 @@ bool foxui_wait_events(Foxui_Window *window) {
     WaitMessage();
     return foxui_poll_events(window);
 }
+
+// ========================================================================
+// debug stuff
+// ========================================================================
+
+FOXUI_INTERNAL COLORREF foxui_hsv(f32 hue, f32 saturation, f32 value) {
+    hue = hue - floorf(hue);
+    
+    f32 h = hue * 6.f;
+    s32 i = (s32)floorf(h);
+    f32 f = h - (f32)i;
+    
+    f32 p = value * (1.f - saturation);
+    f32 q = value * (1.f - saturation * f);
+    f32 t = value * (1.f - saturation * (1.f - f));
+    
+    f32 r = 0.f, g = 0.f, b = 0.f;
+    
+    switch(i % 6) {
+        case 0: r = value; g = t; b = p; break;
+        case 1: r = q; g = value; b = p; break;
+        case 2: r = p; g = value; b = t; break;
+        case 3: r = p; g = q; b = value; break;
+        case 4: r = t; g = p; b = value; break;
+        case 5: r = value; g = p; b = q; break;
+    }
+    
+    return RGB(
+        (u8)(r * 255.f),
+        (u8)(g * 255.f),
+        (u8)(b * 255.f)
+    );
+}
+
+FOXUI_INTERNAL void foxui_d3d11_push_hsv_triangle(
+    Foxui_D3D11 *d3d,
+    f32 center_x,
+    f32 center_y,
+    f32 radius,
+    f32 time
+) {
+    constexpr f32 pi  = 3.14159265358979323846f;
+    constexpr f32 tau = pi * 2.f;
+
+    f32 angle0 = -pi * 0.5f;
+    f32 angle1 = angle0 + tau / 3.f;
+    f32 angle2 = angle1 + tau / 3.f;
+
+    f32 x0 = center_x + cosf(angle0) * radius;
+    f32 y0 = center_y + sinf(angle0) * radius;
+
+    f32 x1 = center_x + cosf(angle1) * radius;
+    f32 y1 = center_y + sinf(angle1) * radius;
+
+    f32 x2 = center_x + cosf(angle2) * radius;
+    f32 y2 = center_y + sinf(angle2) * radius;
+
+    f32 hue = time * 0.15f;
+
+    COLORREF color0 = foxui_hsv(hue,             1.f, 1.f);
+    COLORREF color1 = foxui_hsv(hue + 1.f / 3.f, 1.f, 1.f);
+    COLORREF color2 = foxui_hsv(hue + 2.f / 3.f, 1.f, 1.f);
+
+    foxui_d3d11_push_triangle(
+        d3d,
+        x0, y0, color0,
+        x1, y1, color1,
+        x2, y2, color2
+    );
+}
+
+void foxui_spinning_triangle_titlebar(Foxui_Window *window, f32 time) {
+    f32 titlebar_height = (f32)(window->titlebar_rect.bottom - window->titlebar_rect.top);
+    foxui_d3d11_push_hsv_triangle(
+        &foxui_d3d11,
+        18.f,
+        titlebar_height * 0.5f,
+        10.f,
+        time
+    )
+;}
+
+void foxui_spinning_triangle_client(Foxui_Window *, f32 time) {
+    foxui_d3d11_push_hsv_triangle(
+        &foxui_d3d11,
+        foxui_d3d11.width * 0.5f,
+        foxui_d3d11.height * 0.5f,
+        100.f,
+        time
+    );
+}
+
