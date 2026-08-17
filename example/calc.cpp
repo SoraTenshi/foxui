@@ -14,10 +14,15 @@ static void render_frame_fn(Foxui_Window *window) {
     App_State *app = (App_State *)window->user_data;
     foxui_begin_frame(window, &app->list);
     f32 time = (f32)GetTickCount64() / 1000.f;
-    foxui_spinning_triangle_client(window, &app->list, time);
-    
-    foxui_draw_titlebar(window, &app->list);
+
+    foxui_begin_titlebar(window, &app->list);
     foxui_spinning_triangle_titlebar(window, &app->list, time);
+    foxui_end_titlebar(window, &app->list);
+
+    foxui_begin_content(window, &app->list);
+    foxui_spinning_triangle_client(window, &app->list, time);
+    foxui_end_content(window, &app->list);
+
     foxui_end_frame(window, &app->list);
 }
 

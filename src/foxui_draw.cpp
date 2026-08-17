@@ -174,7 +174,7 @@ void foxui_begin_draw_command(Foxui_Window *, Foxui_Draw_List *list, Foxui_Rect 
         return;
     }
     
-    list->commands[list->command_count] = Foxui_Draw_Command {
+    list->commands[list->command_count++] = Foxui_Draw_Command {
         .clip_rect = rect,
         .first_index = list->index_count,
         .index_count = 0,
@@ -182,19 +182,12 @@ void foxui_begin_draw_command(Foxui_Window *, Foxui_Draw_List *list, Foxui_Rect 
 }
 
 void foxui_end_draw_command(Foxui_Window *, Foxui_Draw_List *list) {
-    if(list->command_count >= list->command_capacity) {
+    if(list->command_count == 0) {
         // todo(sora): this is an assert
         return;
     }
     
-    Foxui_Draw_Command *command = &list->commands[list->command_count]; 
-    if(list->index_count < command->first_index) {
-        // todo(sora): logging
-        return;
-    }
-    
-    u32 index_count = list->index_count - command->first_index;
-    command->index_count = index_count;
-    
-    list->command_count += 1;
+    Foxui_Draw_Command *command = &list->commands[list->command_count - 1]; 
+    u32 index_count             = list->index_count - command->first_index;
+    command->index_count        = index_count;
 }

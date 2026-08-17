@@ -19,6 +19,7 @@ struct Foxui_Window {
     Foxui_Render_Frame_Fn render_frame;
     u32                   dpi;
     Foxui_Rect            titlebar_rect;
+    Foxui_Rect            content_rect;
     Foxui_Rect            client_rect;
     Foxui_Window_Flags    flags;
     void                 *user_data;
@@ -63,14 +64,18 @@ bool foxui_create_window(
 );
 void foxui_destroy_window(Foxui_Window *window);
 
-void foxui_begin_draw_command(Foxui_Window *window, Foxui_Draw_List *list);
+void foxui_begin_draw_command(Foxui_Window *window, Foxui_Draw_List *list, Foxui_Rect rect);
 void foxui_end_draw_command(Foxui_Window *window, Foxui_Draw_List *list);
+
+void foxui_begin_content(Foxui_Window *window, Foxui_Draw_List *list);
+void foxui_end_content(Foxui_Window *window, Foxui_Draw_List *list);
 
 void foxui_begin_frame(Foxui_Window *window, Foxui_Draw_List *list);
 void foxui_end_frame(Foxui_Window *window, Foxui_Draw_List *list);
 void foxui_present(Foxui_Window *window);
 
-void foxui_draw_titlebar(Foxui_Window *window, Foxui_Draw_List *list);
+void foxui_begin_titlebar(Foxui_Window *window, Foxui_Draw_List *list);
+void foxui_end_titlebar(Foxui_Window *window, Foxui_Draw_List *list);
 
 void foxui_spinning_triangle_titlebar(Foxui_Window *window, Foxui_Draw_List *list, f32 time);
 void foxui_spinning_triangle_client(Foxui_Window *window, Foxui_Draw_List *list, f32 time);

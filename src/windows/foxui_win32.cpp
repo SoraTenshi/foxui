@@ -280,7 +280,7 @@ FOXUI_INTERNAL LRESULT foxui_window_hit_test(Foxui_Window *window, LPARAM mouse_
     return HTCLIENT;
 }
 
-FOXUI_INTERNAL void foxui_draw_windows_titlebar(Foxui_Window *window, Foxui_Draw_List *list) {
+FOXUI_INTERNAL void foxui_get_titlebar_rect(Foxui_Window *window) {
     HWND hwnd = (HWND)window->native_window;
 
     RECT client_rect = {};
@@ -292,6 +292,25 @@ FOXUI_INTERNAL void foxui_draw_windows_titlebar(Foxui_Window *window, Foxui_Draw
         .bottom = (f32)client_rect.bottom,
     };
 
+    u32 dpi             = foxui_window_dpi(hwnd);
+    s32 titlebar_height = foxui_scale_for_dpi(32, dpi);
+
+    RECT titlebar_rect    = client_rect;
+    titlebar_rect.bottom  = titlebar_height;
+    window->titlebar_rect = Foxui_Rect {
+        .left = (f32)titlebar_rect.left,
+        .top = (f32)titlebar_rect.top,
+        .right = (f32)titlebar_rect.right,
+        .bottom = (f32)titlebar_rect.bottom,
+    };
+}
+
+FOXUI_INTERNAL void foxui_draw_windows_titlebar(Foxui_Window *window, Foxui_Draw_List *list) {
+    HWND hwnd = (HWND)window->native_window;
+
+    RECT client_rect = {};
+    GetClientRect(hwnd, &client_rect);
+    
     u32 dpi             = foxui_window_dpi(hwnd);
     s32 titlebar_height = foxui_scale_for_dpi(32, dpi);
     s32 button_width    = foxui_scale_for_dpi(46, dpi);
@@ -350,13 +369,6 @@ FOXUI_INTERNAL void foxui_draw_windows_titlebar(Foxui_Window *window, Foxui_Draw
 
     RECT titlebar_rect = client_rect;
     titlebar_rect.bottom = titlebar_height;
-    window->titlebar_rect = Foxui_Rect {
-        .left = (f32)titlebar_rect.left,
-        .top = (f32)titlebar_rect.top,
-        .right = (f32)titlebar_rect.right,
-        .bottom = (f32)titlebar_rect.bottom,
-    };
-    
     // note(sora): "full titlebar"
     foxui_draw_list_push_rect(
         list,
@@ -729,19 +741,42 @@ FOXUI_INTERNAL LRESULT CALLBACK foxui_wnd_proc(
     return DefWindowProcW(hwnd, message, word_parameter, long_parameter);
 }
 
-void foxui_begin_frame(Foxui_Window *window, Foxui_Draw_List *list) {
+FOXUI_INTERNAL void foxui_content_rect(Foxui_Window *window) {
+    window->content_rect = Foxui_Rect {
+        .left = window->client_rect.left,
+        .top = window->titlebar_rect.bottom,
+        .right = window->client_rect.right,
+        .bottom = window->client_rect.bottom,
+    };
+}
+
+void foxui_begin_frame(Foxui_Window *, Foxui_Draw_List *list) {
     foxui_draw_list_reset(list);
-    foxui_begin_draw_command(window, list, window->client_rect);
     foxui_d3d11_begin_frame(&foxui_d3d11);
 }
 
 void foxui_end_frame(Foxui_Window *window, Foxui_Draw_List *list) {
-    foxui_end_draw_command(window, list);
     foxui_d3d11_end_frame(&foxui_d3d11, window, list);
 }
 
-void foxui_draw_titlebar(Foxui_Window *window, Foxui_Draw_List *list) {
+void foxui_begin_titlebar(Foxui_Window *window, Foxui_Draw_List *list) {
+    foxui_get_titlebar_rect(window);
+    foxui_content_rect(window);
+    list->commands[0].clip_rect = window->content_rect;
+    foxui_begin_draw_command(window, list, window->titlebar_rect);
     foxui_draw_windows_titlebar(window, list);
+}
+
+void foxui_end_titlebar(Foxui_Window *window, Foxui_Draw_List *list) {
+    foxui_end_draw_command(window, list);
+}
+
+void foxui_begin_content(Foxui_Window *window, Foxui_Draw_List *list) {
+    foxui_begin_draw_command(window, list, window->content_rect);
+}
+
+void foxui_end_content(Foxui_Window *window, Foxui_Draw_List *list) {
+    foxui_end_draw_command(window, list);
 }
 
 bool foxui_create_window(

@@ -578,7 +578,7 @@ FOXUI_INTERNAL bool foxui_d3d11_submit(Foxui_D3D11 *d3d, Foxui_Draw_List *list) 
             .bottom = (LONG)command->clip_rect.bottom,
         };
         d3d->context->RSSetScissorRects(1, &scissor);
-        d3d->context->DrawIndexed(list->index_count, 0, 0);
+        d3d->context->DrawIndexed(command->index_count, command->first_index, 0);
     }
     
     return true;

@@ -1,6 +1,10 @@
 #ifndef FOXUI_PLATFORM_H
 #define FOXUI_PLATFORM_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include <stddef.h>
 
@@ -55,5 +59,9 @@ typedef struct String8 {
 
 #define FOXUI_INTERNAL static
 #define FOXUI_GLOBAL   static
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* FOXUI_PLATFORM_H */
