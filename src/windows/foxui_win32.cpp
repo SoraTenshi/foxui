@@ -12,20 +12,21 @@
 #include <windowsx.h>
 #include <dwmapi.h>
 
+#include "../foxui_draw.cpp"
 #include "foxui_d3d11.cpp"
 
 // todo(sora): perhaps, this should also be configurable?
 #define FOXUI_WINDOW_CLASS_NAME L"Foxui_Window_Class_Name"
 
-FOXUI_INTERNAL COLORREF FOXUI_COLOR_BG                   RGB(0x2a, 0x29, 0x47);
-FOXUI_INTERNAL COLORREF FOXUI_COLOR_TITLEBAR             RGB(0x20, 0x20, 0x37);
-FOXUI_INTERNAL COLORREF FOXUI_COLOR_BORDER               RGB(0x40, 0x40, 0x70);
-FOXUI_INTERNAL COLORREF FOXUI_COLOR_TEXT                 RGB(0xa0, 0xb7, 0xeb);
-FOXUI_INTERNAL COLORREF FOXUI_COLOR_BUTTON_HOVER         RGB(0x33, 0x32, 0x5d);
-FOXUI_INTERNAL COLORREF FOXUI_COLOR_BUTTON_PRESSED       RGB(0x3b, 0x3b, 0x80);
-FOXUI_INTERNAL COLORREF FOXUI_COLOR_CLOSE_BUTTON_HOVER   RGB(0xc4, 0x2b, 0x1c);
-FOXUI_INTERNAL COLORREF FOXUI_COLOR_CLOSE_BUTTON_PRESSED RGB(0xa8, 0x25, 0x1a);
-FOXUI_INTERNAL COLORREF FOXUI_COLOR_CLOSE_ICON_HOVER     RGB(0xff, 0xff, 0xff);
+FOXUI_INTERNAL Foxui_Color FOXUI_COLOR_BG                   FOXUI_RGB8(0x2a, 0x29, 0x47);
+FOXUI_INTERNAL Foxui_Color FOXUI_COLOR_TITLEBAR             FOXUI_RGB8(0x20, 0x20, 0x37);
+FOXUI_INTERNAL Foxui_Color FOXUI_COLOR_BORDER               FOXUI_RGB8(0x40, 0x40, 0x70);
+FOXUI_INTERNAL Foxui_Color FOXUI_COLOR_TEXT                 FOXUI_RGB8(0xa0, 0xb7, 0xeb);
+FOXUI_INTERNAL Foxui_Color FOXUI_COLOR_BUTTON_HOVER         FOXUI_RGB8(0x33, 0x32, 0x5d);
+FOXUI_INTERNAL Foxui_Color FOXUI_COLOR_BUTTON_PRESSED       FOXUI_RGB8(0x3b, 0x3b, 0x80);
+FOXUI_INTERNAL Foxui_Color FOXUI_COLOR_CLOSE_BUTTON_HOVER   FOXUI_RGB8(0xc4, 0x2b, 0x1c);
+FOXUI_INTERNAL Foxui_Color FOXUI_COLOR_CLOSE_BUTTON_PRESSED FOXUI_RGB8(0xa8, 0x25, 0x1a);
+FOXUI_INTERNAL Foxui_Color FOXUI_COLOR_CLOSE_ICON_HOVER     FOXUI_RGB8(0xff, 0xff, 0xff);
 
 enum {
     FOXUI_WND_EXTRA_HOVER_TARGET             = 0,
@@ -212,11 +213,14 @@ FOXUI_INTERNAL void foxui_invalidate_animated_title_buttons(HWND hwnd) {
     }
 }
 
-FOXUI_INTERNAL COLORREF foxui_blend_color(COLORREF from, COLORREF to, u32 t) {
-    u32 r = (GetRValue(from) * (255 - t) + GetRValue(to) * t) / 255;
-    u32 g = (GetGValue(from) * (255 - t) + GetGValue(to) * t) / 255;
-    u32 b = (GetBValue(from) * (255 - t) + GetBValue(to) * t) / 255;
-    return RGB(r, g, b);
+FOXUI_INTERNAL Foxui_Color foxui_blend_color(Foxui_Color from, Foxui_Color to, u32 t) {
+    f32 factor = (f32)t / 255.f;
+    return Foxui_Color {
+        .r = from.r + (to.r - from.r) * factor,
+        .g = from.g + (to.g - from.g) * factor,
+        .b = from.b + (to.b - from.b) * factor,
+        .a = from.a + (to.a - from.a) * factor,
+    };
 }
 
 FOXUI_INTERNAL LRESULT foxui_window_hit_test(Foxui_Window *window, LPARAM mouse_position) {
@@ -276,7 +280,7 @@ FOXUI_INTERNAL LRESULT foxui_window_hit_test(Foxui_Window *window, LPARAM mouse_
     return HTCLIENT;
 }
 
-FOXUI_INTERNAL void foxui_d3d11_draw_titlebar(Foxui_Window *window) {
+FOXUI_INTERNAL void foxui_draw_windows_titlebar(Foxui_Window *window, Foxui_Draw_List *list) {
     HWND hwnd = (HWND)window->native_window;
 
     RECT client_rect = {};
@@ -348,12 +352,14 @@ FOXUI_INTERNAL void foxui_d3d11_draw_titlebar(Foxui_Window *window) {
     };
     
     // note(sora): "full titlebar"
-    foxui_d3d11_push_rect(
-        &foxui_d3d11,
-        0.f,
-        0.f,
-        (f32)client_rect.right,
-        (f32)titlebar_height,
+    foxui_draw_list_push_rect(
+        list,
+        {
+            0.f,
+            0.f,
+            (f32)client_rect.right,
+            (f32)titlebar_height,
+        },
         FOXUI_COLOR_TITLEBAR
     );
 
@@ -375,22 +381,24 @@ FOXUI_INTERNAL void foxui_d3d11_draw_titlebar(Foxui_Window *window) {
         f32 left = (f32)(client_rect.right - button_width * index_from_right);
         f32 right = (f32)(client_rect.right - button_width * (index_from_right - 1));
 
-        COLORREF hover_color = button == FOXUI_TITLE_BUTTON_CLOSE
+        Foxui_Color hover_color = button == FOXUI_TITLE_BUTTON_CLOSE
             ? FOXUI_COLOR_CLOSE_BUTTON_HOVER
             : FOXUI_COLOR_BUTTON_HOVER;
-        COLORREF pressed_color = button == FOXUI_TITLE_BUTTON_CLOSE
+        Foxui_Color pressed_color = button == FOXUI_TITLE_BUTTON_CLOSE
             ? FOXUI_COLOR_CLOSE_BUTTON_PRESSED
             : FOXUI_COLOR_BUTTON_PRESSED;
-        COLORREF fill = pressed == button
+        Foxui_Color fill = pressed == button
             ? pressed_color
             : foxui_blend_color(FOXUI_COLOR_TITLEBAR, hover_color, hover_intensity);
         
-        foxui_d3d11_push_rect(
-            &foxui_d3d11,
-            left,
-            0.f,
-            right,
-            (f32)titlebar_height,
+        foxui_draw_list_push_rect(
+            list,
+            {
+                left,
+                0.f,
+                right,
+                (f32)titlebar_height,
+            },
             fill
         );
     }
@@ -405,12 +413,14 @@ FOXUI_INTERNAL void foxui_d3d11_draw_titlebar(Foxui_Window *window) {
       : 0.f);
 
     // note(sora): "minimize"
-    foxui_d3d11_push_rect(
-        &foxui_d3d11,
-        minimize_center_x - icon_half_size,
-        minimize_center_y,
-        minimize_center_x + icon_half_size,
-        minimize_center_y + icon_thickness,
+    foxui_draw_list_push_rect(
+        list,
+        {
+            minimize_center_x - icon_half_size,
+            minimize_center_y,
+            minimize_center_x + icon_half_size,
+            minimize_center_y + icon_thickness,
+        },
         FOXUI_COLOR_TEXT
     );
 
@@ -439,46 +449,54 @@ FOXUI_INTERNAL void foxui_d3d11_draw_titlebar(Foxui_Window *window) {
         f32 front_bottom = bottom;
 
         // note(sora): "maximize" in zoom
-        foxui_d3d11_push_rect_outline(
-            &foxui_d3d11,
-            back_left,
-            back_top,
-            back_right,
-            back_bottom,
+        foxui_draw_list_push_rect_outline(
+            list,
+            {
+                back_left,
+                back_top,
+                back_right,
+                back_bottom,
+            },
             thickness,
             FOXUI_COLOR_TEXT
         );
-        foxui_d3d11_push_rect(
-            &foxui_d3d11,
-            front_left,
-            front_top,
-            front_right,
-            front_bottom,
+        foxui_draw_list_push_rect(
+            list,
+            {
+                front_left,
+                front_top,
+                front_right,
+                front_bottom,
+            },
             FOXUI_COLOR_TITLEBAR
         );
-        foxui_d3d11_push_rect_outline(
-            &foxui_d3d11,
-            front_left,
-            front_top,
-            front_right,
-            front_bottom,
+        foxui_draw_list_push_rect_outline(
+            list,
+            {
+                front_left,
+                front_top,
+                front_right,
+                front_bottom,
+            },
             thickness,
             FOXUI_COLOR_TEXT
         );
     } else {
         // note(sora): "maximize" not zoomed
-        foxui_d3d11_push_rect_outline(
-            &foxui_d3d11,
-            left,
-            top,
-            right,
-            bottom,
+        foxui_draw_list_push_rect_outline(
+            list,
+            {
+                left,
+                top,
+                right,
+                bottom,
+            },
             thickness,
             FOXUI_COLOR_TEXT
         );
     }
 
-    COLORREF close_icon_color = foxui_blend_color(
+    Foxui_Color close_icon_color = foxui_blend_color(
         FOXUI_COLOR_TEXT,
         FOXUI_COLOR_CLOSE_ICON_HOVER,
         pressed == FOXUI_TITLE_BUTTON_CLOSE
@@ -492,21 +510,29 @@ FOXUI_INTERNAL void foxui_d3d11_draw_titlebar(Foxui_Window *window) {
       : 0.f);
       
     // note(sora): "close"
-    foxui_d3d11_push_line(
-        &foxui_d3d11,
-        close_center_x - icon_half_size,
-        close_center_y - icon_half_size,
-        close_center_x + icon_half_size,
-        close_center_y + icon_half_size,
+    foxui_draw_list_push_line(
+        list,
+        {
+            close_center_x - icon_half_size,
+            close_center_y - icon_half_size,
+        },
+        {
+            close_center_x + icon_half_size,
+            close_center_y + icon_half_size,
+        },
         icon_thickness,
         close_icon_color
     );
-    foxui_d3d11_push_line(
-        &foxui_d3d11,
-        close_center_x + icon_half_size,
-        close_center_y - icon_half_size,
-        close_center_x - icon_half_size,
-        close_center_y + icon_half_size,
+    foxui_draw_list_push_line(
+        list,
+        {
+            close_center_x + icon_half_size,
+            close_center_y - icon_half_size,
+        },
+        {
+            close_center_x - icon_half_size,
+            close_center_y + icon_half_size,
+        },
         icon_thickness,
         close_icon_color
     );
@@ -673,12 +699,12 @@ FOXUI_INTERNAL LRESULT CALLBACK foxui_wnd_proc(
         case WM_EXITSIZEMOVE: {
             window->flags.is_sizing = false;
             KillTimer(hwnd, FOXUI_RENDER_TIMER_ID);
-            window->render_frame(window, nullptr);
+            window->render_frame(window);
             return 0;
         } break;
         case WM_TIMER: {
             if(word_parameter == FOXUI_RENDER_TIMER_ID) {
-                window->render_frame(window, nullptr);
+                window->render_frame(window);
                 return 0;
             }
             
@@ -697,22 +723,24 @@ FOXUI_INTERNAL LRESULT CALLBACK foxui_wnd_proc(
     return DefWindowProcW(hwnd, message, word_parameter, long_parameter);
 }
 
-void foxui_begin_frame(Foxui_Window *) {
+void foxui_begin_frame(Foxui_Window *, Foxui_Draw_List *list) {
+    foxui_draw_list_reset(list);
     foxui_d3d11_begin_frame(&foxui_d3d11);
 }
 
-void foxui_end_frame(Foxui_Window *window) {
-    foxui_d3d11_end_frame(&foxui_d3d11, window);
+void foxui_end_frame(Foxui_Window *window, Foxui_Draw_List *list) {
+    foxui_d3d11_end_frame(&foxui_d3d11, window, list);
 }
 
-void foxui_draw_titlebar(Foxui_Window *window) {
-    foxui_d3d11_draw_titlebar(window);
+void foxui_draw_titlebar(Foxui_Window *window, Foxui_Draw_List *list) {
+    foxui_draw_windows_titlebar(window, list);
 }
 
 bool foxui_create_window(
-    Foxui_Window *window,
+    Foxui_Window            *window,
     Foxui_Window_Description description,
-    Foxui_Render_Frame_Fn render_frame
+    Foxui_Render_Frame_Fn    render_frame,
+    void                    *user_data
 ) {
     if(!window
         || (!description.title.items && description.title.count)
@@ -749,6 +777,9 @@ bool foxui_create_window(
     // note(sora): apparently, WS_OVERLAPPEDWINDOW is the only style that allows
     //             for the behaviour i actually want.
     DWORD style = WS_OVERLAPPEDWINDOW;
+     
+    window->render_frame = render_frame;
+    window->user_data = user_data;
     
     HWND hwnd = CreateWindowExW(
         0,
@@ -772,7 +803,6 @@ bool foxui_create_window(
 
     window->native_window = (void *)hwnd;
     window->dpi = (u32)GetDpiForWindow(hwnd);
-    window->render_frame = render_frame;
 
     DWORD corner_preference = window->flags.round_corners ? DWMWCP_ROUND : DWMWCP_DONOTROUND;
     DwmSetWindowAttribute(
@@ -832,7 +862,7 @@ bool foxui_wait_events(Foxui_Window *window) {
 // debug stuff
 // ========================================================================
 
-FOXUI_INTERNAL COLORREF foxui_hsv(f32 hue, f32 saturation, f32 value) {
+FOXUI_INTERNAL Foxui_Color foxui_hsv(f32 hue, f32 saturation, f32 value) {
     hue = hue - floorf(hue);
     
     f32 h = hue * 6.f;
@@ -854,19 +884,18 @@ FOXUI_INTERNAL COLORREF foxui_hsv(f32 hue, f32 saturation, f32 value) {
         case 5: r = value; g = p; b = q; break;
     }
     
-    return RGB(
+    return FOXUI_RGB8(
         (u8)(r * 255.f),
         (u8)(g * 255.f),
         (u8)(b * 255.f)
     );
 }
 
-FOXUI_INTERNAL void foxui_d3d11_push_hsv_triangle(
-    Foxui_D3D11 *d3d,
-    f32 center_x,
-    f32 center_y,
-    f32 radius,
-    f32 time
+FOXUI_INTERNAL void foxui_draw_list_push_hsv_triangle(
+    Foxui_Draw_List *list,
+    Foxui_Point      p,
+    f32              radius,
+    f32              time
 ) {
     constexpr f32 pi  = 3.14159265358979323846f;
     constexpr f32 tau = pi * 2.f;
@@ -875,45 +904,49 @@ FOXUI_INTERNAL void foxui_d3d11_push_hsv_triangle(
     f32 angle1 = angle0 + tau / 3.f;
     f32 angle2 = angle1 + tau / 3.f;
 
-    f32 x0 = center_x + cosf(angle0) * radius;
-    f32 y0 = center_y + sinf(angle0) * radius;
+    f32 x0 = p.x + cosf(angle0) * radius;
+    f32 y0 = p.y + sinf(angle0) * radius;
 
-    f32 x1 = center_x + cosf(angle1) * radius;
-    f32 y1 = center_y + sinf(angle1) * radius;
+    f32 x1 = p.x + cosf(angle1) * radius;
+    f32 y1 = p.y + sinf(angle1) * radius;
 
-    f32 x2 = center_x + cosf(angle2) * radius;
-    f32 y2 = center_y + sinf(angle2) * radius;
+    f32 x2 = p.x + cosf(angle2) * radius;
+    f32 y2 = p.y + sinf(angle2) * radius;
 
     f32 hue = time * 0.15f;
 
-    COLORREF color0 = foxui_hsv(hue,             1.f, 1.f);
-    COLORREF color1 = foxui_hsv(hue + 1.f / 3.f, 1.f, 1.f);
-    COLORREF color2 = foxui_hsv(hue + 2.f / 3.f, 1.f, 1.f);
+    Foxui_Color color0 = foxui_hsv(hue,             1.f, 1.f);
+    Foxui_Color color1 = foxui_hsv(hue + 1.f / 3.f, 1.f, 1.f);
+    Foxui_Color color2 = foxui_hsv(hue + 2.f / 3.f, 1.f, 1.f);
 
-    foxui_d3d11_push_triangle(
-        d3d,
-        x0, y0, color0,
-        x1, y1, color1,
-        x2, y2, color2
+    foxui_draw_list_push_triangle(
+        list,
+        foxui_vertex(x0, y0, color0),
+        foxui_vertex(x1, y1, color1),
+        foxui_vertex(x2, y2, color2)
     );
 }
 
-void foxui_spinning_triangle_titlebar(Foxui_Window *window, f32 time) {
+void foxui_spinning_triangle_titlebar(Foxui_Window *window, Foxui_Draw_List *list, f32 time) {
     f32 titlebar_height = (f32)(window->titlebar_rect.bottom - window->titlebar_rect.top);
-    foxui_d3d11_push_hsv_triangle(
-        &foxui_d3d11,
-        18.f,
-        titlebar_height * 0.5f,
+    foxui_draw_list_push_hsv_triangle(
+        list,
+        {
+            18.f,
+            titlebar_height * 0.5f,
+        },
         10.f,
         time
     )
 ;}
 
-void foxui_spinning_triangle_client(Foxui_Window *, f32 time) {
-    foxui_d3d11_push_hsv_triangle(
-        &foxui_d3d11,
-        foxui_d3d11.width * 0.5f,
-        foxui_d3d11.height * 0.5f,
+void foxui_spinning_triangle_client(Foxui_Window *, Foxui_Draw_List *list, f32 time) {
+    foxui_draw_list_push_hsv_triangle(
+        list,
+        {
+            foxui_d3d11.width * 0.5f,
+            foxui_d3d11.height * 0.5f,
+        },
         100.f,
         time
     );

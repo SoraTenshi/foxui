@@ -2,8 +2,9 @@
 
 #include "foxui_platform.h"
 
+struct Foxui_Draw_List;
 struct Foxui_Window;
-using Foxui_Render_Frame_Fn = void(*)(Foxui_Window *window, void *user_data);
+using Foxui_Render_Frame_Fn = void(*)(Foxui_Window *window);
 
 struct Foxui_Titlebar_Rect {
     s32 left;
@@ -26,6 +27,7 @@ struct Foxui_Window {
     u32                   dpi;
     Foxui_Titlebar_Rect   titlebar_rect;
     Foxui_Window_Flags    flags;
+    void                 *user_data;
 };
 
 struct Foxui_Window_Description {
@@ -34,21 +36,37 @@ struct Foxui_Window_Description {
     s32     height;
 };
 
+struct Foxui_Vertex {
+    Foxui_Point point;
+    Foxui_Color color;
+};
+
+struct Foxui_Draw_List {
+    Foxui_Vertex *vertices;
+    u32           vertex_count;
+    u32           vertex_capacity;
+    
+    u32 *indices;
+    u32  index_count;
+    u32  index_capacity;
+};
+
 bool foxui_create_window(
     Foxui_Window             *window,
     Foxui_Window_Description  description,
-    Foxui_Render_Frame_Fn     render_frame
+    Foxui_Render_Frame_Fn     render_frame,
+    void                     *user_data
 );
 void foxui_destroy_window(Foxui_Window *window);
 
-void foxui_begin_frame(Foxui_Window *window);
-void foxui_end_frame(Foxui_Window *window);
+void foxui_begin_frame(Foxui_Window *window, Foxui_Draw_List *list);
+void foxui_end_frame(Foxui_Window *window, Foxui_Draw_List *list);
 void foxui_present(Foxui_Window *window);
 
-void foxui_draw_titlebar(Foxui_Window *window);
+void foxui_draw_titlebar(Foxui_Window *window, Foxui_Draw_List *list);
 
-void foxui_spinning_triangle_titlebar(Foxui_Window *window, f32 time);
-void foxui_spinning_triangle_client(Foxui_Window *window, f32 time);
+void foxui_spinning_triangle_titlebar(Foxui_Window *window, Foxui_Draw_List *list, f32 time);
+void foxui_spinning_triangle_client(Foxui_Window *window, Foxui_Draw_List *list, f32 time);
 
 bool foxui_poll_events(Foxui_Window *window);
 bool foxui_wait_events(Foxui_Window *window);

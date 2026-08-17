@@ -19,6 +19,24 @@ typedef double  f64;
 
 typedef uintptr_t usize;
 
+typedef struct Foxui_Rect {
+    f32 left, top, right, bottom;
+} Foxui_Rect;
+
+typedef struct Foxui_Point {
+    f32 x, y;
+} Foxui_Point;
+
+typedef struct Foxui_Color {
+    f32 r, g, b, a;
+} Foxui_Color;
+
+#ifdef __cplusplus
+#define FOXUI_RGB8(r, g, b) (Foxui_Color{(r) / 255.f, (g) / 255.f, (b) / 255.f, 1.f})
+#else
+#define FOXUI_RGB8(r, g, b) ((Foxui_Color){(r) / 255.f, (g) / 255.f, (b) / 255.f, 1.f})
+#endif
+
 typedef struct String8 {
     u8   *items;
     usize count;
