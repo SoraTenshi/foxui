@@ -6,13 +6,6 @@ struct Foxui_Draw_List;
 struct Foxui_Window;
 using Foxui_Render_Frame_Fn = void(*)(Foxui_Window *window);
 
-struct Foxui_Titlebar_Rect {
-    s32 left;
-    s32 top;
-    s32 right;
-    s32 bottom;
-};
-
 struct Foxui_Window_Flags {
     bool should_close       : 1;
     bool native_decorations : 1;
@@ -25,7 +18,8 @@ struct Foxui_Window {
     void                 *native_window;
     Foxui_Render_Frame_Fn render_frame;
     u32                   dpi;
-    Foxui_Titlebar_Rect   titlebar_rect;
+    Foxui_Rect            titlebar_rect;
+    Foxui_Rect            client_rect;
     Foxui_Window_Flags    flags;
     void                 *user_data;
 };
@@ -41,6 +35,12 @@ struct Foxui_Vertex {
     Foxui_Color color;
 };
 
+struct Foxui_Draw_Command {
+    Foxui_Rect clip_rect;
+    u32        first_index;
+    u32        index_count;
+};
+
 struct Foxui_Draw_List {
     Foxui_Vertex *vertices;
     u32           vertex_count;
@@ -49,6 +49,10 @@ struct Foxui_Draw_List {
     u32 *indices;
     u32  index_count;
     u32  index_capacity;
+    
+    Foxui_Draw_Command *commands;
+    u32                 command_count;
+    u32                 command_capacity;
 };
 
 bool foxui_create_window(
@@ -58,6 +62,9 @@ bool foxui_create_window(
     void                     *user_data
 );
 void foxui_destroy_window(Foxui_Window *window);
+
+void foxui_begin_draw_command(Foxui_Window *window, Foxui_Draw_List *list);
+void foxui_end_draw_command(Foxui_Window *window, Foxui_Draw_List *list);
 
 void foxui_begin_frame(Foxui_Window *window, Foxui_Draw_List *list);
 void foxui_end_frame(Foxui_Window *window, Foxui_Draw_List *list);

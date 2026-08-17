@@ -12,6 +12,7 @@ FOXUI_INTERNAL Foxui_Vertex foxui_vertex(f32 x, f32 y, Foxui_Color color) {
 FOXUI_INTERNAL void foxui_draw_list_reset(Foxui_Draw_List *list) {
     list->vertex_count = 0;
     list->index_count = 0;
+    list->command_count = 0;
 }
 
 FOXUI_INTERNAL bool foxui_draw_list_can_push(
@@ -165,4 +166,35 @@ FOXUI_INTERNAL bool foxui_draw_list_push_rect_outline(
     );
     
     return true;
+}
+
+void foxui_begin_draw_command(Foxui_Window *, Foxui_Draw_List *list, Foxui_Rect rect) {
+    if(list->command_count >= list->command_capacity) {
+        // todo(sora): logging
+        return;
+    }
+    
+    list->commands[list->command_count] = Foxui_Draw_Command {
+        .clip_rect = rect,
+        .first_index = list->index_count,
+        .index_count = 0,
+    };
+}
+
+void foxui_end_draw_command(Foxui_Window *, Foxui_Draw_List *list) {
+    if(list->command_count >= list->command_capacity) {
+        // todo(sora): this is an assert
+        return;
+    }
+    
+    Foxui_Draw_Command *command = &list->commands[list->command_count]; 
+    if(list->index_count < command->first_index) {
+        // todo(sora): logging
+        return;
+    }
+    
+    u32 index_count = list->index_count - command->first_index;
+    command->index_count = index_count;
+    
+    list->command_count += 1;
 }

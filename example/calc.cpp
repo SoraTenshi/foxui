@@ -5,6 +5,7 @@
 struct App_State {
     Foxui_Vertex vertices[4096];
     u32 indices[8192];
+    Foxui_Draw_Command commands[1024];
     
     Foxui_Draw_List list;
 };
@@ -26,6 +27,8 @@ int main(void) {
     state.list.vertex_capacity = FOXUI_ARRAY_COUNT(state.vertices);
     state.list.indices = state.indices;
     state.list.index_capacity = FOXUI_ARRAY_COUNT(state.indices);
+    state.list.commands = state.commands;
+    state.list.command_capacity = FOXUI_ARRAY_COUNT(state.commands);
 
     Foxui_Window window = {};
     if(!foxui_create_window(

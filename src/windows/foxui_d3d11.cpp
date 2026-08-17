@@ -61,6 +61,7 @@ struct Foxui_D3D11 {
     ID3D11VertexShader     *vertex_shader;
     ID3D11PixelShader      *pixel_shader;
     ID3D11InputLayout      *input_layout;
+    ID3D11RasterizerState  *rasterizer_state;
     
     ID3D11Buffer           *vertex_buffer;
     ID3D11Buffer           *index_buffer;
@@ -355,6 +356,18 @@ FOXUI_INTERNAL bool foxui_d3d11_create_shaders(Foxui_D3D11 *d3d) {
     return SUCCEEDED(result);
 }
 
+FOXUI_INTERNAL bool foxui_d3d11_create_rasterizer_state(Foxui_D3D11 *d3d) {
+    D3D11_RASTERIZER_DESC desc = {};
+    desc.FillMode = D3D11_FILL_SOLID;
+    desc.CullMode = D3D11_CULL_NONE;
+    desc.ScissorEnable = TRUE;
+    desc.DepthClipEnable = TRUE;
+
+    HRESULT result = d3d->device->CreateRasterizerState(&desc, &d3d->rasterizer_state);
+
+    return SUCCEEDED(result);
+}
+
 FOXUI_INTERNAL bool foxui_d3d11_create(Foxui_D3D11 *d3d, Foxui_Window *window) {
     // todo(sora): perhaps, those should be asserts instead.
     if(!d3d || !window || !window->native_window) {
@@ -373,6 +386,12 @@ FOXUI_INTERNAL bool foxui_d3d11_create(Foxui_D3D11 *d3d, Foxui_Window *window) {
     
     RECT client_rect = {};
     GetClientRect((HWND)window->native_window, &client_rect);
+    window->client_rect = Foxui_Rect{
+        .left = (f32)client_rect.left,
+        .top = (f32)client_rect.top,
+        .right = (f32)client_rect.right,
+        .bottom = (f32)client_rect.bottom,
+    };
     d3d->width  = client_rect.right - client_rect.left;
     d3d->height = client_rect.bottom - client_rect.top;
     
@@ -392,6 +411,11 @@ FOXUI_INTERNAL bool foxui_d3d11_create(Foxui_D3D11 *d3d, Foxui_Window *window) {
     }
     
     if(!foxui_d3d11_create_vertex_constants(d3d)) {
+        // todo(sora): logging
+        return false;
+    }
+    
+    if(!foxui_d3d11_create_rasterizer_state(d3d)) {
         // todo(sora): logging
         return false;
     }
@@ -423,143 +447,6 @@ FOXUI_INTERNAL void foxui_d3d11_destroy(Foxui_D3D11 *d3d) {
     
     *d3d = {0};
 }
-
-// FOXUI_INTERNAL Foxui_D3D11_Vertex foxui_d3d11_vertex(
-    // Foxui_D3D11 *d3d,
-    // f32          x,
-    // f32          y,
-    // COLORREF     color
-// ) {
-    // // note(sora): ndc = normalized device coordinates:
-    // //             x,y: -1.f - 1.f
-    // f32 ndc_x = (x / (f32)d3d->width) * 2.f - 1.f;
-    // f32 ndc_y = 1.f - (y / (f32)d3d->height) * 2.f;
-    
-    // return Foxui_D3D11_Vertex {
-        // .x = ndc_x,
-        // .y = ndc_y,
-        // .r = (f32)GetRValue(color) / 255.f,
-        // .g = (f32)GetGValue(color) / 255.f,
-        // .b = (f32)GetBValue(color) / 255.f,
-        // .a = 1.f,
-    // };
-// }
-
-// note(sora): basically, a quad is just 2 triangles
-// todo(sora): right now, this is kind of meh. We'd probably want to convert them
-//             to an index buffer at some point?
-// FOXUI_INTERNAL void foxui_d3d11_push_quad(
-    // Foxui_D3D11 *d3d,
-    // f32          x0,
-    // f32          y0,
-    // f32          x1,
-    // f32          y1,
-    // f32          x2,
-    // f32          y2,
-    // f32          x3,
-    // f32          y3,
-    // COLORREF     color
-// ) {
-    // // todo(sora): logging
-    // if(d3d->vertex_count + 6 > FOXUI_D3D11_VERTEX_CAP) return;
-    
-    // Foxui_D3D11_Vertex *vertex = d3d->vertices + d3d->vertex_count;
-    
-    // vertex[0] = foxui_d3d11_vertex(d3d, x0, y0, color);
-    // vertex[1] = foxui_d3d11_vertex(d3d, x1, y1, color);
-    // vertex[2] = foxui_d3d11_vertex(d3d, x2, y2, color);
-    
-    // vertex[3] = foxui_d3d11_vertex(d3d, x0, y0, color);
-    // vertex[4] = foxui_d3d11_vertex(d3d, x2, y2, color);
-    // vertex[5] = foxui_d3d11_vertex(d3d, x3, y3, color);
-    
-    // d3d->vertex_count += 6;
-// }
-
-// FOXUI_INTERNAL void foxui_d3d11_push_rect(
-    // Foxui_D3D11 *d3d,
-    // f32          left,
-    // f32          top,
-    // f32          right,
-    // f32          bottom,
-    // COLORREF     color
-// ) {
-    // foxui_d3d11_push_quad(
-        // d3d,
-        // left, top,
-        // right, top,
-        // right, bottom,
-        // left, bottom,
-        // color
-    // );
-// }
-
-// FOXUI_INTERNAL void foxui_d3d11_push_line(
-    // Foxui_D3D11 *d3d,
-    // // todo(sora): those should probably just be "point" structures
-    // f32      x0,
-    // f32      y0,
-    // f32      x1,
-    // f32      y1,
-    // f32      thickness,
-    // COLORREF color
-// ) {
-    // f32 delta_x = x1 - x0;
-    // f32 delta_y = y1 - y0;
-    
-    // f32 length = sqrtf(delta_x * delta_x + delta_y * delta_y);
-    // if(length == 0.f) {
-        // // todo(sora): logging
-        // return;
-    // }
-    
-    // // note(sora): half the thickness, as we have essentially 2 lines
-    // f32 scale = thickness * 0.5f / length;
-    // // note(sora): shift the line by the perpendicular offset vector
-    // f32 offset_x = -delta_y * scale;
-    // f32 offset_y = delta_x * scale;
-    
-    // foxui_d3d11_push_quad(
-        // d3d,
-        // x0 + offset_x, y0 + offset_y,
-        // x0 - offset_x, y0 - offset_y,
-        // x1 - offset_x, y1 - offset_y,
-        // x1 + offset_x, y1 + offset_y,
-        // color
-    // );
-// }
-
-// FOXUI_INTERNAL void foxui_d3d11_push_triangle(
-    // Foxui_D3D11 *d3d,
-    // f32 x0, f32 y0, COLORREF color0,
-    // f32 x1, f32 y1, COLORREF color1,
-    // f32 x2, f32 y2, COLORREF color2
-// ) {
-    // if(d3d->vertex_count + 3 > FOXUI_D3D11_VERTEX_CAP) return;
-    
-    // Foxui_D3D11_Vertex *vertex = d3d->vertices + d3d->vertex_count;
-    
-    // vertex[0] = foxui_d3d11_vertex(d3d, x0, y0, color0);
-    // vertex[1] = foxui_d3d11_vertex(d3d, x1, y1, color1);
-    // vertex[2] = foxui_d3d11_vertex(d3d, x2, y2, color2);
-    
-    // d3d->vertex_count += 3;
-// }
-
-// FOXUI_INTERNAL void foxui_d3d11_push_rect_outline(
-    // Foxui_D3D11 *d3d,
-    // f32          left,
-    // f32          top,
-    // f32          right,
-    // f32          bottom,
-    // f32          thickness,
-    // COLORREF     color
-// ) {
-    // foxui_d3d11_push_rect(d3d, left, top, right, top + thickness, color);
-    // foxui_d3d11_push_rect(d3d, left, bottom - thickness, right, bottom, color);
-    // foxui_d3d11_push_rect(d3d, left, top + thickness, left + thickness, bottom - thickness, color);
-    // foxui_d3d11_push_rect(d3d, right - thickness, top + thickness, right, bottom - thickness, color);
-// }
 
 FOXUI_INTERNAL bool foxui_d3d11_resize(Foxui_D3D11 *d3d, s32 width, s32 height) {
     // todo(sora): perhaps, those should be asserts instead.
@@ -609,6 +496,8 @@ FOXUI_INTERNAL void foxui_d3d11_begin_frame(Foxui_D3D11 *d3d) {
 
     d3d->context->RSSetViewports(1, &viewport);
     d3d->context->OMSetRenderTargets(1, &d3d->render_target, nullptr);
+    
+    d3d->context->RSSetState(d3d->rasterizer_state);
 
     // todo(sora): maybe not a static color? who knows lol
     f32 clear_color[] = {
@@ -624,10 +513,7 @@ FOXUI_INTERNAL void foxui_d3d11_begin_frame(Foxui_D3D11 *d3d) {
     );
 }
 
-FOXUI_INTERNAL bool foxui_d3d11_submit(
-    Foxui_D3D11     *d3d,
-    Foxui_Draw_List *list
-) {
+FOXUI_INTERNAL bool foxui_d3d11_submit(Foxui_D3D11 *d3d, Foxui_Draw_List *list) {
     if(list->vertex_count == 0 || list->index_count == 0) {
         return true;
     }
@@ -681,7 +567,19 @@ FOXUI_INTERNAL bool foxui_d3d11_submit(
     d3d->context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     d3d->context->VSSetShader(d3d->vertex_shader, nullptr, 0);
     d3d->context->PSSetShader(d3d->pixel_shader, nullptr, 0);
-    d3d->context->DrawIndexed(list->index_count, 0, 0);
+     
+    for(u32 i = 0; i < list->command_count; ++i) {
+        Foxui_Draw_Command *command = &list->commands[i];
+
+        D3D11_RECT scissor = {
+            .left = (LONG)command->clip_rect.left,
+            .top = (LONG)command->clip_rect.top,
+            .right = (LONG)command->clip_rect.right,
+            .bottom = (LONG)command->clip_rect.bottom,
+        };
+        d3d->context->RSSetScissorRects(1, &scissor);
+        d3d->context->DrawIndexed(list->index_count, 0, 0);
+    }
     
     return true;
 }

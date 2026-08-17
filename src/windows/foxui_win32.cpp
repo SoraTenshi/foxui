@@ -285,6 +285,12 @@ FOXUI_INTERNAL void foxui_draw_windows_titlebar(Foxui_Window *window, Foxui_Draw
 
     RECT client_rect = {};
     GetClientRect(hwnd, &client_rect);
+    window->client_rect = Foxui_Rect {
+        .left = (f32)client_rect.left,
+        .top = (f32)client_rect.top,
+        .right = (f32)client_rect.right,
+        .bottom = (f32)client_rect.bottom,
+    };
 
     u32 dpi             = foxui_window_dpi(hwnd);
     s32 titlebar_height = foxui_scale_for_dpi(32, dpi);
@@ -344,11 +350,11 @@ FOXUI_INTERNAL void foxui_draw_windows_titlebar(Foxui_Window *window, Foxui_Draw
 
     RECT titlebar_rect = client_rect;
     titlebar_rect.bottom = titlebar_height;
-    window->titlebar_rect = Foxui_Titlebar_Rect {
-        .left = titlebar_rect.left,
-        .top = titlebar_rect.top,
-        .right = titlebar_rect.right,
-        .bottom = titlebar_rect.bottom,
+    window->titlebar_rect = Foxui_Rect {
+        .left = (f32)titlebar_rect.left,
+        .top = (f32)titlebar_rect.top,
+        .right = (f32)titlebar_rect.right,
+        .bottom = (f32)titlebar_rect.bottom,
     };
     
     // note(sora): "full titlebar"
@@ -723,12 +729,14 @@ FOXUI_INTERNAL LRESULT CALLBACK foxui_wnd_proc(
     return DefWindowProcW(hwnd, message, word_parameter, long_parameter);
 }
 
-void foxui_begin_frame(Foxui_Window *, Foxui_Draw_List *list) {
+void foxui_begin_frame(Foxui_Window *window, Foxui_Draw_List *list) {
     foxui_draw_list_reset(list);
+    foxui_begin_draw_command(window, list, window->client_rect);
     foxui_d3d11_begin_frame(&foxui_d3d11);
 }
 
 void foxui_end_frame(Foxui_Window *window, Foxui_Draw_List *list) {
+    foxui_end_draw_command(window, list);
     foxui_d3d11_end_frame(&foxui_d3d11, window, list);
 }
 
