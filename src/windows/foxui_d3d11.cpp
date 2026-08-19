@@ -4,6 +4,7 @@
 
 #include <d3d11.h>
 #include <dxgi1_2.h>
+#include <dcomp.h>
 
 #include <d3dcompiler.h>
 
@@ -19,12 +20,14 @@ const char *shader =
 
     "struct VS_Input {"
     "    float2 position : POSITION;"
-    "    float4 color : COLOR;"
+    "    float2 uv       : TEXCOORD;"
+    "    float4 color    : COLOR;"
     "};"
 
     "struct VS_Output {"
     "    float4 position : SV_POSITION;"
-    "    float4 color : COLOR;"
+    "    float2 uv       : TEXCOORD;"
+    "    float4 color    : COLOR;"
     "};"
 
     "VS_Output vs_main(VS_Input input) {"
@@ -34,18 +37,26 @@ const char *shader =
     "    p.x = input.position.x / viewport_size.x * 2.0 - 1.0;"
     "    p.y = 1.0 - input.position.y / viewport_size.y * 2.0;"
     "    output.position = float4(p, 0.0, 1.0);"
+    "    output.uv = input.uv;"
     "    output.color = input.color;"
     "    return output;"
     "}"
 
+    "Texture2D texture0 : register(t0);"
+    "SamplerState sampler0 : register(s0);"
     "float4 ps_main(VS_Output input) : SV_TARGET {"
-    "    return input.color;"
+    "    return texture0.Sample(sampler0, input.uv) * input.color;"
     "}";
     
 // struct Foxui_D3D11_Vertex {
     // f32 x, y;
     // f32 r, g, b, a;
 // };
+
+struct Foxui_D3D11_Texture {
+    ID3D11Texture2D          *texture;
+    ID3D11ShaderResourceView *view;
+};
 
 struct Foxui_D3D11_Vertex_Constants {
     f32 width;
@@ -62,11 +73,18 @@ struct Foxui_D3D11 {
     ID3D11PixelShader      *pixel_shader;
     ID3D11InputLayout      *input_layout;
     ID3D11RasterizerState  *rasterizer_state;
+    ID3D11SamplerState     *sampler;
+
+    IDCompositionDevice    *composition_device;
+    IDCompositionTarget    *composition_target;
+    IDCompositionVisual    *composition_visual;
     
     ID3D11Buffer           *vertex_buffer;
     ID3D11Buffer           *index_buffer;
     ID3D11Buffer           *vertex_constants;
 
+    Foxui_D3D11_Texture    white_texture;
+    Foxui_D3D11_Texture    missing_texture;
     s32 width;
     s32 height;
 };
@@ -78,7 +96,7 @@ struct Foxui_D3D11 {
 #endif
 
 FOXUI_INTERNAL bool foxui_d3d11_create_device(Foxui_D3D11 *d3d) {
-    UINT flags = 0;
+    UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
     flags |= D3D11_DEBUG;
     
     D3D_FEATURE_LEVEL feature_levels[] = {
@@ -103,6 +121,50 @@ FOXUI_INTERNAL bool foxui_d3d11_create_device(Foxui_D3D11 *d3d) {
         &d3d->context
     );
     
+    return SUCCEEDED(result);
+}
+
+FOXUI_INTERNAL bool foxui_d3d11_create_composition(Foxui_D3D11 *d3d, HWND hwnd ) {
+    HRESULT result = DCompositionCreateDevice(
+        nullptr,
+        __uuidof(IDCompositionDevice),
+        (void **)&d3d->composition_device
+    );
+
+    if(FAILED(result)) {
+        return false;
+    }
+
+    result = d3d->composition_device->CreateTargetForHwnd(
+        hwnd,
+        FALSE,
+        &d3d->composition_target
+    );
+
+    if(FAILED(result)) {
+        return false;
+    }
+
+    result = d3d->composition_device->CreateVisual(&d3d->composition_visual);
+
+    if(FAILED(result)) {
+        return false;
+    }
+
+    result = d3d->composition_target->SetRoot(d3d->composition_visual);
+
+    if(FAILED(result)) {
+        return false;
+    }
+
+    result = d3d->composition_visual->SetContent(d3d->swap_chain);
+
+    if(FAILED(result)) {
+        return false;
+    }
+
+    result = d3d->composition_device->Commit();
+
     return SUCCEEDED(result);
 }
 
@@ -140,21 +202,27 @@ FOXUI_INTERNAL bool foxui_d3d11_create_swap_chain(Foxui_D3D11 *d3d, HWND hwnd) {
         return false;
     }
     
+    RECT client_rect = {};
+    GetClientRect(hwnd, &client_rect);
+    
     DXGI_SWAP_CHAIN_DESC1 desc = {};
     // note(sora): swap chain -> display surface.
     //             shader and stuff can still use floating point.
-    desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    desc.Width            = client_rect.right - client_rect.left;
+    desc.Height           = client_rect.bottom - client_rect.top;
+    desc.Format           = DXGI_FORMAT_B8G8R8A8_UNORM;
     desc.SampleDesc.Count = 1;
-    desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-    desc.BufferCount = 2;
-    desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+    desc.BufferUsage      = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    desc.BufferCount      = 2;
+    desc.Scaling          = DXGI_SCALING_STRETCH;
+    desc.SwapEffect       = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+    desc.AlphaMode        = DXGI_ALPHA_MODE_IGNORE;
     
     // note(sora): msdn says don't use `CreateSwapChain` anymore
-    result = factory->CreateSwapChainForHwnd(
+    // note(sora): https://github.com/bigfatbrowncat/noflicker_directx_window
+    result = factory->CreateSwapChainForComposition(
         d3d->device,
-        hwnd,
         &desc,
-        nullptr,
         nullptr,
         &d3d->swap_chain
     );
@@ -332,6 +400,15 @@ FOXUI_INTERNAL bool foxui_d3d11_create_shaders(Foxui_D3D11 *d3d) {
             0,
         },
         {
+            "TEXCOORD",
+            0,
+            DXGI_FORMAT_R32G32_FLOAT,
+            0,
+            offsetof(Foxui_Vertex, uv),
+            D3D11_INPUT_PER_VERTEX_DATA,
+            0,
+        },
+        {
             "COLOR",
             0,
             DXGI_FORMAT_R32G32B32A32_FLOAT,
@@ -368,6 +445,104 @@ FOXUI_INTERNAL bool foxui_d3d11_create_rasterizer_state(Foxui_D3D11 *d3d) {
     return SUCCEEDED(result);
 }
 
+FOXUI_INTERNAL bool foxui_d3d11_create_sampler_state(Foxui_D3D11 *d3d) {
+    D3D11_SAMPLER_DESC desc = {};
+    desc.Filter   = D3D11_FILTER_MIN_MAG_MIP_POINT;
+    desc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
+    desc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
+    desc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+    desc.MaxLOD   = D3D11_FLOAT32_MAX;
+
+    HRESULT result = d3d->device->CreateSamplerState(&desc, &d3d->sampler);
+
+    return SUCCEEDED(result);
+}
+
+FOXUI_INTERNAL bool foxui_d3d11_create_white_texture(Foxui_D3D11 *d3d) {
+    u32 pixel = 0xffffffff;
+
+    D3D11_TEXTURE2D_DESC desc = {};
+    desc.Width            = 1;
+    desc.Height           = 1;
+    desc.MipLevels        = 1;
+    desc.ArraySize        = 1;
+    desc.Format           = DXGI_FORMAT_R8G8B8A8_UNORM;
+    desc.SampleDesc.Count = 1;
+    desc.Usage            = D3D11_USAGE_IMMUTABLE;
+    desc.BindFlags        = D3D11_BIND_SHADER_RESOURCE;
+
+    D3D11_SUBRESOURCE_DATA data = {};
+    data.pSysMem = &pixel;
+    data.SysMemPitch = sizeof(pixel);
+
+    HRESULT result = d3d->device->CreateTexture2D(
+        &desc,
+        &data,
+        &d3d->white_texture.texture
+    );
+
+    if(FAILED(result)) {
+        return false;
+    }
+
+    result = d3d->device->CreateShaderResourceView(
+        d3d->white_texture.texture,
+        nullptr,
+        &d3d->white_texture.view
+    );
+
+    return SUCCEEDED(result);
+}
+
+FOXUI_INTERNAL bool foxui_d3d11_create_missing_texture(Foxui_D3D11 *d3d) {
+    constexpr u32 width  = 8;
+    constexpr u32 height = 8;
+
+    u32 pixels[width * height];
+
+    for(u32 y = 0; y < height; ++y) {
+        for(u32 x = 0; x < width; ++x) {
+            bool alternate = ((x / 2) + (y / 2)) & 1;
+
+            pixels[y * width + x] = alternate
+                ? 0xffff00ff
+                : 0xff000000;
+        }
+    }
+
+    D3D11_TEXTURE2D_DESC desc = {};
+    desc.Width            = width;
+    desc.Height           = height;
+    desc.MipLevels        = 1;
+    desc.ArraySize        = 1;
+    desc.Format           = DXGI_FORMAT_R8G8B8A8_UNORM;
+    desc.SampleDesc.Count = 1;
+    desc.Usage            = D3D11_USAGE_IMMUTABLE;
+    desc.BindFlags        = D3D11_BIND_SHADER_RESOURCE;
+
+    D3D11_SUBRESOURCE_DATA data = {};
+    data.pSysMem = pixels;
+    data.SysMemPitch = sizeof(u32) * width;
+
+    HRESULT result = d3d->device->CreateTexture2D(
+        &desc,
+        &data,
+        &d3d->missing_texture.texture
+    );
+
+    if(FAILED(result)) {
+        return false;
+    }
+
+    result = d3d->device->CreateShaderResourceView(
+        d3d->missing_texture.texture,
+        nullptr,
+        &d3d->missing_texture.view
+    );
+
+    return SUCCEEDED(result);
+}
+
 FOXUI_INTERNAL bool foxui_d3d11_create(Foxui_D3D11 *d3d, Foxui_Window *window) {
     // todo(sora): perhaps, those should be asserts instead.
     if(!d3d || !window || !window->native_window) {
@@ -384,6 +559,11 @@ FOXUI_INTERNAL bool foxui_d3d11_create(Foxui_D3D11 *d3d, Foxui_Window *window) {
         return false;
     }
     
+    if(!foxui_d3d11_create_composition(d3d, (HWND)window->native_window)) {
+        // todo(sora): add logging
+        return false;
+    }
+
     RECT client_rect = {};
     GetClientRect((HWND)window->native_window, &client_rect);
     window->client_rect = Foxui_Rect{
@@ -420,6 +600,21 @@ FOXUI_INTERNAL bool foxui_d3d11_create(Foxui_D3D11 *d3d, Foxui_Window *window) {
         return false;
     }
     
+    if(!foxui_d3d11_create_sampler_state(d3d)) {
+        // todo(sora): logging
+        return false;
+    }
+    
+    if(!foxui_d3d11_create_white_texture(d3d)) {
+        // todo(sora): logging
+        return false;
+    }
+    
+    if(!foxui_d3d11_create_missing_texture(d3d)) {
+        // todo(sora): logging
+        return false;
+    }
+    
     if(!foxui_d3d11_create_shaders(d3d)) {
         // todo(sora): logging
         return false;
@@ -435,16 +630,25 @@ FOXUI_INTERNAL void foxui_d3d11_destroy(Foxui_D3D11 *d3d) {
         d3d->context->ClearState();
         d3d->context->Release();
     }
-    if(d3d->render_target)    d3d->render_target->Release();
-    if(d3d->swap_chain)       d3d->swap_chain->Release();
-    if(d3d->device)           d3d->device->Release();
-    if(d3d->vertex_constants) d3d->vertex_constants->Release();
-    if(d3d->index_buffer)     d3d->index_buffer->Release();
-    if(d3d->vertex_buffer)    d3d->vertex_buffer->Release();
-    if(d3d->input_layout)     d3d->input_layout->Release();
-    if(d3d->pixel_shader)     d3d->pixel_shader->Release();
-    if(d3d->vertex_shader)    d3d->vertex_shader->Release();
-    
+    if(d3d->render_target)           d3d->render_target->Release();
+    if(d3d->swap_chain)              d3d->swap_chain->Release();
+    if(d3d->device)                  d3d->device->Release();
+    if(d3d->vertex_constants)        d3d->vertex_constants->Release();
+    if(d3d->index_buffer)            d3d->index_buffer->Release();
+    if(d3d->vertex_buffer)           d3d->vertex_buffer->Release();
+    if(d3d->input_layout)            d3d->input_layout->Release();
+    if(d3d->pixel_shader)            d3d->pixel_shader->Release();
+    if(d3d->vertex_shader)           d3d->vertex_shader->Release();
+    if(d3d->white_texture.view)      d3d->white_texture.view->Release();
+    if(d3d->white_texture.texture)   d3d->white_texture.texture->Release();
+    if(d3d->missing_texture.view)    d3d->missing_texture.view->Release();
+    if(d3d->missing_texture.texture) d3d->missing_texture.texture->Release();
+    if(d3d->sampler)                 d3d->sampler->Release();
+    if(d3d->composition_visual)      d3d->composition_visual->SetContent(nullptr);
+    if(d3d->composition_device)      d3d->composition_device->Commit();
+    if(d3d->composition_visual)      d3d->composition_visual->Release();
+    if(d3d->composition_target)      d3d->composition_target->Release();
+    if(d3d->composition_device)      d3d->composition_device->Release();
     *d3d = {0};
 }
 
@@ -567,9 +771,22 @@ FOXUI_INTERNAL bool foxui_d3d11_submit(Foxui_D3D11 *d3d, Foxui_Draw_List *list) 
     d3d->context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     d3d->context->VSSetShader(d3d->vertex_shader, nullptr, 0);
     d3d->context->PSSetShader(d3d->pixel_shader, nullptr, 0);
+    d3d->context->PSSetSamplers(0, 1, &d3d->sampler);
      
     for(u32 i = 0; i < list->command_count; ++i) {
         Foxui_Draw_Command *command = &list->commands[i];
+
+        Foxui_D3D11_Texture *texture = nullptr;
+        switch(command->texture.id) {
+            case 1: {
+                texture = &d3d->missing_texture;
+            } break;
+            default: {
+                texture = &d3d->white_texture;
+            } break;
+        }
+
+        d3d->context->PSSetShaderResources(0, 1, &texture->view);
 
         D3D11_RECT scissor = {
             .left = (LONG)command->clip_rect.left,
@@ -594,7 +811,8 @@ FOXUI_INTERNAL bool foxui_d3d11_end_frame(
         return false;
     }
     UINT sync_interval = window->flags.is_sizing ? 0 : 1;
-    HRESULT result = d3d->swap_chain->Present(sync_interval, 0);
+    UINT flags         = window->flags.is_sizing ? DXGI_PRESENT_RESTART : 0;
+    HRESULT result     = d3d->swap_chain->Present(sync_interval, flags);
     
     return SUCCEEDED(result);
 }

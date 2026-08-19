@@ -36,7 +36,7 @@ if not defined VCToolsInstallDir (
 :ready
 
 set "CL_FLAGS_COMMON=/nologo /std:c++20 /utf-8 /W4 /WX /EHsc- /GR- /DUNICODE /D_UNICODE /DFOXUI_PLATFORM_WINDOWS /Isrc /Ivendor"
-set "LIBRARIES=user32.lib gdi32.lib ole32.lib imm32.lib d3d11.lib dxgi.lib dwrite.lib windowscodecs.lib shell32.lib dwmapi.lib d3dcompiler.lib"
+set "LIBRARIES=user32.lib gdi32.lib ole32.lib imm32.lib d3d11.lib dxgi.lib dwrite.lib windowscodecs.lib shell32.lib dwmapi.lib d3dcompiler.lib dcomp.lib"
 
 if /I "%BUILD_MODE%"=="debug" set "CL_FLAGS=%CL_FLAGS_COMMON% /Od /Zi /MTd /DFOXUI_DEBUG"
 if /I "%BUILD_MODE%"=="release" set "CL_FLAGS=%CL_FLAGS_COMMON% /O2 /MT /DNDEBUG"

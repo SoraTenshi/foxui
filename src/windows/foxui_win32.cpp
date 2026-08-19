@@ -42,7 +42,6 @@ enum {
     FOXUI_RENDER_TIMER_ID = 2,
     
     FOXUI_HOVER_TIMER_MS  = 15,
-    FOXUI_RENDER_TIMER_MS = 1,
     FOXUI_HOVER_FADE_MS   = 160,
 };
 
@@ -303,6 +302,44 @@ FOXUI_INTERNAL void foxui_get_titlebar_rect(Foxui_Window *window) {
         .right = (f32)titlebar_rect.right,
         .bottom = (f32)titlebar_rect.bottom,
     };
+}
+
+FOXUI_INTERNAL void foxui_update_window_rects(Foxui_Window *window) {
+    HWND hwnd = (HWND)window->native_window;
+
+    RECT client = {};
+    GetClientRect(hwnd, &client);
+
+    window->client_rect = {
+        (f32)client.left,
+        (f32)client.top,
+        (f32)client.right,
+        (f32)client.bottom,
+    };
+
+    f32 titlebar_height =
+        (f32)foxui_scale_for_dpi(32, foxui_window_dpi(hwnd));
+
+    window->titlebar_rect = {
+        window->client_rect.left,
+        window->client_rect.top,
+        window->client_rect.right,
+        titlebar_height,
+    };
+
+    window->content_rect = {
+        window->client_rect.left,
+        window->titlebar_rect.bottom,
+        window->client_rect.right,
+        window->client_rect.bottom,
+    };
+}
+
+FOXUI_INTERNAL void foxui_update_window_rects(Foxui_Window *window, s32 width, s32 height) {
+    f32 titlebar_height = (f32)foxui_scale_for_dpi(32, window->dpi);
+    window->client_rect = {0.f, 0.f, (f32)width, (f32)height};
+    window->titlebar_rect = {0.f, 0.f, (f32)width, titlebar_height};
+    window->content_rect = {0.f, titlebar_height, (f32)width, (f32)height};
 }
 
 FOXUI_INTERNAL void foxui_draw_windows_titlebar(Foxui_Window *window, Foxui_Draw_List *list) {
@@ -577,14 +614,26 @@ FOXUI_INTERNAL LRESULT CALLBACK foxui_wnd_proc(
 
     switch (message) {
         case WM_NCCALCSIZE: {
-            if (custom_decorations && word_parameter) {
-                NCCALCSIZE_PARAMS *client_layout = (NCCALCSIZE_PARAMS *)long_parameter;
-                if (!IsZoomed(hwnd)) {
-                    client_layout->rgrc[0].top += foxui_scale_for_dpi(
-                        1,
-                        foxui_window_dpi(hwnd)
-                    );
+            if(custom_decorations && word_parameter) {
+                NCCALCSIZE_PARAMS *params = (NCCALCSIZE_PARAMS *)long_parameter;
+                
+                RECT *rect = &params->rgrc[0];
+                if(!IsZoomed(hwnd)) {
+                    rect->top += foxui_scale_for_dpi(1, foxui_window_dpi(hwnd));
                 }
+                
+                s32 width  = rect->right - rect->left;
+                s32 height = rect->bottom - rect->top;
+                if(width > 0 && height > 0 && foxui_d3d11.swap_chain) {
+                    foxui_update_window_rects(window, width, height);
+                    
+                    if(width != foxui_d3d11.width || height != foxui_d3d11.height) {
+                        if(foxui_d3d11_resize(&foxui_d3d11, width, height)) {
+                            window->render_frame(window);
+                        }
+                    }
+                }
+                
                 return 0;
             }
         } break;
@@ -683,11 +732,6 @@ FOXUI_INTERNAL LRESULT CALLBACK foxui_wnd_proc(
             return 0;
         } break;
         case WM_SIZE: {
-            s32 width = LOWORD(long_parameter);
-            s32 height = HIWORD(long_parameter);
-            if(width && height) {
-                foxui_d3d11_resize(&foxui_d3d11, width, height);
-            }
             return 0;
         } break;
         case WM_ACTIVATE: {
@@ -711,12 +755,10 @@ FOXUI_INTERNAL LRESULT CALLBACK foxui_wnd_proc(
         } break;
         case WM_ENTERSIZEMOVE: {
             window->flags.is_sizing = true;
-            SetTimer(hwnd, FOXUI_RENDER_TIMER_ID, FOXUI_RENDER_TIMER_MS, nullptr);
             return 0;
         } break;
         case WM_EXITSIZEMOVE: {
             window->flags.is_sizing = false;
-            KillTimer(hwnd, FOXUI_RENDER_TIMER_ID);
             window->render_frame(window);
             return 0;
         } break;
@@ -741,14 +783,6 @@ FOXUI_INTERNAL LRESULT CALLBACK foxui_wnd_proc(
     return DefWindowProcW(hwnd, message, word_parameter, long_parameter);
 }
 
-FOXUI_INTERNAL void foxui_content_rect(Foxui_Window *window) {
-    window->content_rect = Foxui_Rect {
-        .left = window->client_rect.left,
-        .top = window->titlebar_rect.bottom,
-        .right = window->client_rect.right,
-        .bottom = window->client_rect.bottom,
-    };
-}
 
 void foxui_begin_frame(Foxui_Window *, Foxui_Draw_List *list) {
     foxui_draw_list_reset(list);
@@ -761,7 +795,7 @@ void foxui_end_frame(Foxui_Window *window, Foxui_Draw_List *list) {
 
 void foxui_begin_titlebar(Foxui_Window *window, Foxui_Draw_List *list) {
     foxui_get_titlebar_rect(window);
-    foxui_content_rect(window);
+    foxui_update_window_rects(window);
     list->commands[0].clip_rect = window->content_rect;
     foxui_begin_draw_command(window, list, window->titlebar_rect);
     foxui_draw_windows_titlebar(window, list);
@@ -772,6 +806,10 @@ void foxui_end_titlebar(Foxui_Window *window, Foxui_Draw_List *list) {
 }
 
 void foxui_begin_content(Foxui_Window *window, Foxui_Draw_List *list) {
+    foxui_begin_draw_command(window, list, window->content_rect);
+    foxui_draw_missing_texture_background(window, list);
+    foxui_end_draw_command(window, list);
+    list->commands[list->command_count - 1].texture.id = 1;
     foxui_begin_draw_command(window, list, window->content_rect);
 }
 
@@ -964,9 +1002,9 @@ FOXUI_INTERNAL void foxui_draw_list_push_hsv_triangle(
 
     foxui_draw_list_push_triangle(
         list,
-        foxui_vertex(x0, y0, color0),
-        foxui_vertex(x1, y1, color1),
-        foxui_vertex(x2, y2, color2)
+        foxui_vertex(x0, y0, 0.5f, 0.f, color0),
+        foxui_vertex(x1, y1, 1.f, 1.f, color1),
+        foxui_vertex(x2, y2, 0.f, 1.f, color2)
     );
 }
 

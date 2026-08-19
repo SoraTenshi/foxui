@@ -31,13 +31,20 @@ struct Foxui_Window_Description {
     s32     height;
 };
 
+struct Foxui_Texture {
+    u32 id;
+};
+
 struct Foxui_Vertex {
     Foxui_Point point;
+    Foxui_Point uv;
     Foxui_Color color;
 };
 
 struct Foxui_Draw_Command {
-    Foxui_Rect clip_rect;
+    Foxui_Rect    clip_rect;
+    Foxui_Texture texture;
+    
     u32        first_index;
     u32        index_count;
 };

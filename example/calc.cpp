@@ -20,7 +20,7 @@ static void render_frame_fn(Foxui_Window *window) {
     foxui_end_titlebar(window, &app->list);
 
     foxui_begin_content(window, &app->list);
-    foxui_spinning_triangle_client(window, &app->list, time);
+    foxui_spinning_triangle_client(window, &app->list, -time);
     foxui_end_content(window, &app->list);
 
     foxui_end_frame(window, &app->list);
@@ -46,7 +46,7 @@ int main(void) {
     }
     
     while(foxui_poll_events(&window)) {
-        window.render_frame(&window);
+        render_frame_fn(&window);
     }
     
     foxui_destroy_window(&window);

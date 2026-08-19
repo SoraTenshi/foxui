@@ -2,11 +2,16 @@
 
 #include <math.h>
 
-FOXUI_INTERNAL Foxui_Vertex foxui_vertex(f32 x, f32 y, Foxui_Color color) {
+FOXUI_INTERNAL Foxui_Vertex foxui_vertex(f32 x, f32 y, f32 u, f32 v, Foxui_Color color) {
     return Foxui_Vertex {
         .point = {x, y},
+        .uv    = {u, v},
         .color = color,
     };
+}
+
+FOXUI_INTERNAL Foxui_Vertex foxui_vertex(f32 x, f32 y, Foxui_Color color) {
+    return foxui_vertex(x, y, 0.f, 0.f, color);
 }
 
 FOXUI_INTERNAL void foxui_draw_list_reset(Foxui_Draw_List *list) {
@@ -78,6 +83,37 @@ FOXUI_INTERNAL bool foxui_draw_list_push_quad(
     return true;
 }
 
+// FOXUI_INTERNAL bool foxui_draw_list_push_texture_rect(
+    // Foxui_Draw_List *list,
+    // Foxui_Rect       rect,
+    // Foxui_Color      color
+// ) {
+    // return foxui_draw_list_push_quad(
+        // list,
+        // foxui_vertex(rect.left,  rect.top,    0.f, 0.f, color),
+        // foxui_vertex(rect.right, rect.top,    1.f, 0.f, color),
+        // foxui_vertex(rect.right, rect.bottom, 1.f, 1.f, color),
+        // foxui_vertex(rect.left,  rect.bottom, 0.f, 1.f, color)
+    // );
+// }
+
+FOXUI_INTERNAL void foxui_draw_missing_texture_background(
+    Foxui_Window *window,
+    Foxui_Draw_List *list
+) {
+    Foxui_Rect rect = window->content_rect;
+
+    f32 repeat_x = (rect.right - rect.left) / 512.f;
+    f32 repeat_y = (rect.bottom - rect.top) / 512.f;
+    foxui_draw_list_push_quad(
+        list,
+        foxui_vertex(rect.left, rect.top, 0.f, 0.f, FOXUI_RGB8(255, 255, 255)),
+        foxui_vertex(rect.right, rect.top, repeat_x, 0.f, FOXUI_RGB8(255, 255, 255)),
+        foxui_vertex(rect.right, rect.bottom, repeat_x, repeat_y, FOXUI_RGB8(255, 255, 255)),
+        foxui_vertex(rect.left, rect.bottom, 0.f, repeat_y, FOXUI_RGB8(255, 255, 255))
+    );
+}
+
 FOXUI_INTERNAL bool foxui_draw_list_push_rect(
     Foxui_Draw_List *list,
     Foxui_Rect       rect,
@@ -102,7 +138,6 @@ FOXUI_INTERNAL bool foxui_draw_list_push_line(
         // todo(sora): assert, but currently i don't have a good assert macro
         return false;
     }
-    
 
     f32 delta_x = p1.x - p0.x;
     f32 delta_y = p1.y - p0.y;
@@ -112,13 +147,13 @@ FOXUI_INTERNAL bool foxui_draw_list_push_line(
         // todo(sora): logging
         return false;
     }
-    
+
     // note(sora): half the thickness, as we have essentially 2 lines
     f32 scale = thickness * 0.5f / length;
     // note(sora): shift the line by the perpendicular offset vector
     f32 offset_x = -delta_y * scale;
     f32 offset_y = delta_x * scale;
-    
+
     return foxui_draw_list_push_quad(
         list,
         foxui_vertex(p0.x + offset_x, p0.y + offset_y, color),
@@ -175,7 +210,8 @@ void foxui_begin_draw_command(Foxui_Window *, Foxui_Draw_List *list, Foxui_Rect 
     }
     
     list->commands[list->command_count++] = Foxui_Draw_Command {
-        .clip_rect = rect,
+        .clip_rect   = rect,
+        .texture     = {0},
         .first_index = list->index_count,
         .index_count = 0,
     };
