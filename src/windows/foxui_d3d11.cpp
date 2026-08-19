@@ -74,6 +74,7 @@ struct Foxui_D3D11 {
     ID3D11InputLayout      *input_layout;
     ID3D11RasterizerState  *rasterizer_state;
     ID3D11SamplerState     *sampler;
+    ID3D11BlendState       *blend_state;
 
     IDCompositionDevice    *composition_device;
     IDCompositionTarget    *composition_target;
@@ -494,6 +495,21 @@ FOXUI_INTERNAL bool foxui_d3d11_create_white_texture(Foxui_D3D11 *d3d) {
     return SUCCEEDED(result);
 }
 
+FOXUI_INTERNAL bool foxui_d3d11_create_blend_state(Foxui_D3D11 *d3d) {
+    D3D11_BLEND_DESC desc = {};
+    
+    desc.RenderTarget[0].BlendEnable           = TRUE;
+    desc.RenderTarget[0].SrcBlend              = D3D11_BLEND_SRC_ALPHA;
+    desc.RenderTarget[0].DestBlend             = D3D11_BLEND_INV_SRC_ALPHA;
+    desc.RenderTarget[0].BlendOp               = D3D11_BLEND_OP_ADD;
+    desc.RenderTarget[0].SrcBlendAlpha         = D3D11_BLEND_ONE;
+    desc.RenderTarget[0].DestBlendAlpha        = D3D11_BLEND_INV_SRC_ALPHA;
+    desc.RenderTarget[0].BlendOpAlpha          = D3D11_BLEND_OP_ADD;
+    desc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+    
+    return SUCCEEDED(d3d->device->CreateBlendState(&desc, &d3d->blend_state));
+}
+
 FOXUI_INTERNAL bool foxui_d3d11_create_missing_texture(Foxui_D3D11 *d3d) {
     constexpr u32 width  = 8;
     constexpr u32 height = 8;
@@ -610,6 +626,11 @@ FOXUI_INTERNAL bool foxui_d3d11_create(Foxui_D3D11 *d3d, Foxui_Window *window) {
         return false;
     }
     
+    if(!foxui_d3d11_create_blend_state(d3d)) {
+        // todo(sora): logging
+        return false;
+    }
+    
     if(!foxui_d3d11_create_missing_texture(d3d)) {
         // todo(sora): logging
         return false;
@@ -649,6 +670,7 @@ FOXUI_INTERNAL void foxui_d3d11_destroy(Foxui_D3D11 *d3d) {
     if(d3d->composition_visual)      d3d->composition_visual->Release();
     if(d3d->composition_target)      d3d->composition_target->Release();
     if(d3d->composition_device)      d3d->composition_device->Release();
+    if(d3d->blend_state)             d3d->blend_state->Release();
     *d3d = {0};
 }
 
@@ -702,6 +724,9 @@ FOXUI_INTERNAL void foxui_d3d11_begin_frame(Foxui_D3D11 *d3d) {
     d3d->context->OMSetRenderTargets(1, &d3d->render_target, nullptr);
     
     d3d->context->RSSetState(d3d->rasterizer_state);
+    
+    f32 blend_factor[4] = {0};
+    d3d->context->OMSetBlendState(d3d->blend_state, blend_factor, 0xffffffff);
 
     // todo(sora): maybe not a static color? who knows lol
     f32 clear_color[] = {
